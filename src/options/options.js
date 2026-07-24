@@ -95,10 +95,18 @@ async function renderDebugInfo() {
     ? new Date(debugInfo.lastCheckedAt).toLocaleString("ja-JP")
     : "-";
   document.getElementById("debugFetchResultType").textContent = debugInfo?.fetchResultType ?? "-";
+  document.getElementById("debugTopicLinkCount").textContent = debugInfo?.topicLinkCount ?? "-";
+  document.getElementById("debugRowCandidateCount").textContent = debugInfo?.rowCandidateCount ?? "-";
   document.getElementById("debugRecognizedCount").textContent = debugInfo?.recognizedCount ?? "-";
   document.getElementById("debugMatchedCount").textContent = debugInfo?.matchedCount ?? "-";
   document.getElementById("debugNewCount").textContent = debugInfo?.newCount ?? "-";
   document.getElementById("debugParserMode").textContent = debugInfo?.parserMode ?? "-";
+  document.getElementById("debugTopicNameFoundInHtml").textContent =
+    debugInfo?.topicNameFoundInHtml === null || debugInfo?.topicNameFoundInHtml === undefined
+      ? "-"
+      : debugInfo.topicNameFoundInHtml
+        ? "あり"
+        : "なし";
   document.getElementById("debugErrorCode").textContent = debugInfo?.errorCode ?? "-";
 }
 
@@ -203,6 +211,19 @@ async function handleSave() {
   await loadAndRender();
 }
 
+async function handleTestNotification() {
+  const resultEl = document.getElementById("testNotificationResult");
+  resultEl.textContent = "表示を試みています…";
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "test-notification" });
+    resultEl.textContent = response?.message || "テスト通知の結果を取得できませんでした。";
+  } catch (error) {
+    console.error("[desknets_noticer] テスト通知の呼び出しに失敗しました。", error);
+    resultEl.textContent = "テスト通知の表示に失敗しました。";
+  }
+}
+
 async function handleResetHistory() {
   const resultEl = document.getElementById("resetResult");
   const confirmed = window.confirm(
@@ -230,6 +251,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadAndRender();
 
   document.getElementById("testConnectionButton").addEventListener("click", handleTestConnection);
+  document.getElementById("testNotificationButton").addEventListener("click", handleTestNotification);
   document.getElementById("saveButton").addEventListener("click", handleSave);
   document.getElementById("resetHistoryButton").addEventListener("click", handleResetHistory);
   document.getElementById("resetFirstCheckButton").addEventListener("click", handleResetFirstCheck);

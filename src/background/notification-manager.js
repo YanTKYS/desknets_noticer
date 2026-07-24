@@ -2,7 +2,7 @@
 
 import { EXTENSION_NAME, INDIVIDUAL_NOTIFICATION_LIMIT } from "../shared/constants.js";
 import { normalizeWhitespace, truncateText } from "../shared/text-utils.js";
-import { isSameOrigin } from "../desknets/url-utils.js";
+import { isSameOrigin, pickBestMatchingTab } from "../desknets/url-utils.js";
 
 const NOTIFICATION_URL_MAP_KEY = "notificationUrlMap";
 
@@ -128,7 +128,7 @@ export async function notifyAuthRequiredOnce(fallbackUrl) {
 
 /**
  * 通知クリック時に、対象URLを開く。同一オリジンのdesknet's NEOタブが既にあれば
- * そのタブをアクティブにし、なければ新規タブを開く。
+ * そのタブを対象URLへ遷移させてアクティブにし、なければ新規タブを開く。
  * @param {string} notificationId
  * @param {string} configuredOriginUrl 通知クリックで開く前に同一オリジンかを検証する基準URL
  */
@@ -141,10 +141,10 @@ export async function handleNotificationClick(notificationId, configuredOriginUr
   if (!isSameOrigin(url, configuredOriginUrl)) return;
 
   const tabs = await chrome.tabs.query({});
-  const existingTab = tabs.find((tab) => tab.url && isSameOrigin(tab.url, configuredOriginUrl));
+  const existingTab = pickBestMatchingTab(tabs, url);
 
   if (existingTab) {
-    await chrome.tabs.update(existingTab.id, { active: true, url });
+    await chrome.tabs.update(existingTab.id, { url, active: true });
     if (existingTab.windowId != null) {
       await chrome.windows.update(existingTab.windowId, { focused: true });
     }

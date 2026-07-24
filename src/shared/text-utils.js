@@ -51,18 +51,21 @@ export async function sha256Hex(text) {
 
 /**
  * 投稿の識別キーとして使う正規化済み複合文字列を作る。
- * @param {{roomName?: string|null, roomId?: string|null, topicName?: string|null, topicId?: string|null, author?: string|null, postedAt?: string|null, bodyPreview?: string|null, url?: string|null}} post
+ * 投稿IDが取得できない画面（会議室ID・トピックID・トピック名・投稿者・投稿日時・
+ * 投稿概要の組み合わせ）でも、投稿ごとに安定した識別キーを作れるようにする。
+ * 区切り文字には通常のテキストに出現しにくい制御文字（U+001F）を使う。
+ * @param {{roomId?: string|null, topicId?: string|null, topicName?: string|null, author?: string|null, postedAt?: string|null, bodyPreview?: string|null}} post
  * @returns {string}
  */
 export function buildCompositeKeySource(post) {
   return [
-    post.roomId || post.roomName || "",
-    post.topicId || post.topicName || "",
+    post.roomId || "",
+    post.topicId || "",
+    post.topicName || "",
     post.author || "",
     post.postedAt || "",
-    post.bodyPreview || "",
-    post.url || ""
+    post.bodyPreview || ""
   ]
     .map((part) => normalizeWhitespace(String(part)))
-    .join("|");
+    .join("");
 }

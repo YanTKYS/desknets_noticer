@@ -41,6 +41,9 @@ export function createForumPost(partial) {
  * @property {number} matchedCount 対象トピック一致件数
  * @property {number} newCount 新規判定件数
  * @property {string} parserMode 使用した解析方式
+ * @property {number|null} topicLinkCount desknet's NEO v6専用パーサーが検出したトピックリンク件数
+ * @property {number|null} rowCandidateCount 投稿行の候補として認識した件数
+ * @property {boolean|null} topicNameFoundInHtml 設定済みトピック名がHTML本文内に見つかったか
  * @property {string|null} errorCode
  */
 
@@ -52,6 +55,9 @@ export function createDebugInfo(partial) {
     matchedCount: partial.matchedCount ?? 0,
     newCount: partial.newCount ?? 0,
     parserMode: partial.parserMode ?? "unknown",
+    topicLinkCount: partial.topicLinkCount ?? null,
+    rowCandidateCount: partial.rowCandidateCount ?? null,
+    topicNameFoundInHtml: partial.topicNameFoundInHtml ?? null,
     errorCode: partial.errorCode ?? null
   };
 }

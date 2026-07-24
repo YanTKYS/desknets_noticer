@@ -117,3 +117,78 @@ test("初回確認済みのトピックでは新規投稿だけが通知対象�
   assert.equal(newCount, 1);
   assert.equal(newPostsByTopic.get("公用車キャンセル周知用")[0].postId, "2");
 });
+
+test("トピックリンクを1件も認識できなかった場合、状態はOKのまま診断用エラーコードが記録される", async () => {
+  installFakeChrome({ throwOnSettingsGet: false });
+  store.settings = {
+    monitorUrl: "https://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist",
+    topics: [{ name: "公用車キャンセル周知用", enabled: true }],
+    firstCheckDone: {},
+    desktopNotificationsEnabled: true,
+    checkIntervalMinutes: 5
+  };
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => "<html><body></body></html>"
+  });
+
+  // オフスクリーンドキュメントへのメッセージ送信（HTML解析）を模擬し、
+  // トピックリンクを1件も検出できなかった結果を返す。
+  globalThis.chrome.runtime.sendMessage = async () => ({
+    ok: true,
+    pageState: "ok",
+    posts: [],
+    recognizedCount: 0,
+    matchedCount: 0,
+    parserMode: "unknown",
+    topicLinkCount: 0,
+    rowCandidateCount: 0,
+    topicNameFoundInHtml: false
+  });
+
+  const result = await runCheck();
+  assert.equal(result.ok, true);
+
+  const runtimeState = await getRuntimeState();
+  assert.equal(runtimeState.status, STATUS.OK);
+  assert.equal(runtimeState.debugInfo.errorCode, ERROR_CODES.NO_TOPIC_LINKS_FOUND);
+  assert.equal(runtimeState.debugInfo.topicLinkCount, 0);
+});
+
+test("トピックリンクが認識できた場合は診断用エラーコードが記録されない", async () => {
+  installFakeChrome({ throwOnSettingsGet: false });
+  store.settings = {
+    monitorUrl: "https://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist",
+    topics: [{ name: "公用車キャンセル周知用", enabled: true }],
+    firstCheckDone: {},
+    desktopNotificationsEnabled: true,
+    checkIntervalMinutes: 5
+  };
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => "<html><body></body></html>"
+  });
+
+  globalThis.chrome.runtime.sendMessage = async () => ({
+    ok: true,
+    pageState: "ok",
+    posts: [],
+    recognizedCount: 3,
+    matchedCount: 0,
+    parserMode: "desknets-v6",
+    topicLinkCount: 3,
+    rowCandidateCount: 3,
+    topicNameFoundInHtml: false
+  });
+
+  const result = await runCheck();
+  assert.equal(result.ok, true);
+
+  const runtimeState = await getRuntimeState();
+  assert.equal(runtimeState.status, STATUS.OK);
+  assert.equal(runtimeState.debugInfo.errorCode, null);
+});

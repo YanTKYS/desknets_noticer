@@ -3,22 +3,159 @@
 // desknet's NEOの画面構造が変わった場合は、このファイルだけを修正すればよいように
 // 解析ロジックをここに集約している。
 //
+// desknet's NEO v6.0 R1.0の実機確認により、実際のDOM構造（jforum-topiclink等の
+// CSSクラス、data-fid/data-tid属性、ハッシュルーティングのURL）が判明したため、
+// 専用パーサー（PARSER_MODE.DESKNETS_V6）を最優先で実行する。
+// 詳細はdocs/desknets-v6-dom-investigation.mdを参照。
+//
+// v6専用パーサーが1件もトピックリンクを検出できなかった場合にのみ、
+// 以下の汎用パーサー（実画面未確認の暫定実装）へフォールバックする。
 // セレクターの安定性についての方針（優先順位）:
 //   1. 投稿ID・トピックID・会議室IDなどの内部識別子（data-*属性等）
 //   2. リンクURLとそのクエリパラメーター
 //   3. data-*属性、id属性、意味のある要素構造
 //   4. ラベル文字列と相対的なDOM構造
 //   5. CSSクラス名（最も不安定なため最終手段）
-//
-// 重要: 実際のdesknet's NEO v6.0 R1.0画面のHTMLはまだ十分に確認できていない。
-// 下記のセレクターは「一般的な業務グループウェアの新着情報一覧」を想定した
-// 暫定実装であり、docs/desknets-v6-dom-investigation.md に記載のとおり
-// 未確認の部分を含む。実画面のHTMLが提供され次第、本ファイルのセレクターを
-// 調整すること。
 
 import { createForumPost } from "../shared/models.js";
 import { normalizeWhitespace, truncateText } from "../shared/text-utils.js";
 import { PARSER_MODE } from "../shared/constants.js";
+import { extractHashParam } from "./url-utils.js";
+
+// --- desknet's NEO v6.0 R1.0 実DOM専用パーサー ---------------------------------
+
+const DESKNETS_V6_TOPIC_LINK_SELECTOR = "a.jforum-topiclink[data-fid][data-tid]";
+const DESKNETS_V6_FORUM_LINK_SELECTOR = "a.jforum-forumlink[data-fid]";
+const DESKNETS_V6_MEMO_SELECTOR = ".forum-top-list-memo";
+const DESKNETS_V6_AUTHOR_CONTAINER_SELECTOR = ".forum-top-list-name";
+const DESKNETS_V6_DATE_SELECTOR = ".forum-top-list-date";
+
+/**
+ * <br>要素を改行として扱ったうえで、script/style要素を除いたテキストを取得する。
+ * textContentだけでは<br>が単なる境界の消失になり、隣接する文言が連結されて
+ * しまうため、通知表示の可読性のために改行へ変換してから取得する。
+ * @param {Element} el
+ * @returns {string}
+ */
+function extractTextPreservingLineBreaks(el) {
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll("script, style").forEach((node) => node.remove());
+  clone.querySelectorAll("br").forEach((br) => {
+    br.replaceWith(el.ownerDocument.createTextNode("\n"));
+  });
+  return clone.textContent || "";
+}
+
+/**
+ * a.jforum-topiclink[data-fid][data-tid] を手がかりに投稿候補の行（tr）を集める。
+ * 同じtrが複数のリンクから重複して選ばれないよう重複排除する。
+ * :has()セレクターには依存しない。
+ * @param {Document} doc
+ * @returns {{ topicLinkCount: number, rows: Element[] }}
+ */
+function findDesknetsV6Rows(doc) {
+  const topicLinks = Array.from(doc.querySelectorAll(DESKNETS_V6_TOPIC_LINK_SELECTOR));
+
+  const rows = [];
+  const seen = new Set();
+  for (const link of topicLinks) {
+    const row = link.closest("tr");
+    if (!row || seen.has(row)) continue;
+    seen.add(row);
+    rows.push(row);
+  }
+
+  return { topicLinkCount: topicLinks.length, rows };
+}
+
+/**
+ * 1件のtr要素から、desknet's NEO v6の実DOM構造にもとづいてForumPostを組み立てる。
+ * 一部の項目が欠落していても例外を投げず、取得できた範囲で返す。
+ * @param {Element} row
+ * @param {string} documentBaseUrl リンクの絶対URL化・ハッシュパラメーター解決に使うベースURL
+ * @returns {import("../shared/models.js").ForumPost|null}
+ */
+function parseDesknetsV6Row(row, documentBaseUrl) {
+  try {
+    const topicLink = row.querySelector(DESKNETS_V6_TOPIC_LINK_SELECTOR);
+    if (!topicLink) return null;
+
+    // トピック名は完全一致判定に使うため、前後の空白・改行のみ除去し、
+    // 内部の連続空白の変換や大文字小文字・全角半角の変換は行わない。
+    const topicNameRaw = topicLink.getAttribute("title") || topicLink.textContent || "";
+    const topicName = topicNameRaw.trim();
+    if (!topicName) return null;
+
+    let parsedUrl = null;
+    let url = null;
+    const href = topicLink.getAttribute("href");
+    if (href) {
+      try {
+        parsedUrl = new URL(href, documentBaseUrl);
+        url = parsedUrl.toString();
+      } catch {
+        url = null;
+      }
+    }
+
+    const forumLink = row.querySelector(DESKNETS_V6_FORUM_LINK_SELECTOR);
+    const roomName = forumLink
+      ? normalizeWhitespace(forumLink.getAttribute("title") || forumLink.textContent || "") || null
+      : null;
+    const roomId =
+      forumLink?.dataset.fid || topicLink.dataset.fid || extractHashParam(parsedUrl, ["fid"]) || null;
+    const topicId = topicLink.dataset.tid || extractHashParam(parsedUrl, ["tid"]) || null;
+
+    const memoEl = row.querySelector(DESKNETS_V6_MEMO_SELECTOR);
+    const bodyPreviewRaw = memoEl ? extractTextPreservingLineBreaks(memoEl) : "";
+    const bodyPreview = bodyPreviewRaw ? truncateText(normalizeWhitespace(bodyPreviewRaw), 120) : null;
+
+    const nameContainer = row.querySelector(DESKNETS_V6_AUTHOR_CONTAINER_SELECTOR);
+    let author = null;
+    if (nameContainer) {
+      const authorSpan = nameContainer.querySelector("span");
+      const spanValue = authorSpan
+        ? normalizeWhitespace(authorSpan.getAttribute("title") || authorSpan.textContent || "")
+        : "";
+      author = spanValue || normalizeWhitespace(nameContainer.textContent || "") || null;
+    }
+
+    const dateEl = row.querySelector(DESKNETS_V6_DATE_SELECTOR);
+    const postedAt = dateEl ? normalizeWhitespace(dateEl.textContent || "") || null : null;
+
+    return createForumPost({
+      roomName,
+      roomId,
+      topicName,
+      topicId,
+      postId: null,
+      author,
+      postedAt,
+      bodyPreview,
+      url,
+      parserMode: PARSER_MODE.DESKNETS_V6
+    });
+  } catch {
+    // 1行の解析に失敗しても、全体の解析処理は継続する。
+    return null;
+  }
+}
+
+/**
+ * 設定済みの通知対象トピック名が、HTML本文のテキストとして存在するかどうかを調べる。
+ * 対象一致件数が0件のとき、パーサーの不一致（画面変更）なのか、単純な
+ * トピック名の設定ミスなのかを利用者・開発者が切り分けるための診断情報。
+ * @param {Document} doc
+ * @param {string[]} enabledTopicNames
+ * @returns {boolean|null} 有効なトピックが1件も設定されていない場合はnull
+ */
+function checkTopicNameFoundInHtml(doc, enabledTopicNames) {
+  if (!enabledTopicNames || enabledTopicNames.length === 0) return null;
+  const bodyText = doc.body?.textContent || "";
+  return enabledTopicNames.some((name) => typeof name === "string" && name !== "" && bodyText.includes(name));
+}
+
+// --- 汎用パーサー（実画面未確認の暫定実装、v6専用パーサーのフォールバック用） -----
 
 const ROW_SELECTOR_STRATEGIES = [
   {
@@ -224,6 +361,8 @@ function parseRow(row, baseMode, documentBaseUrl) {
 
 /**
  * 新着情報画面のDocumentから、対象トピックの投稿一覧を抽出する。
+ * desknet's NEO v6専用パーサー（jforum-topiclink等）を最優先で実行し、
+ * トピックリンクが1件も見つからない場合にのみ汎用パーサーへフォールバックする。
  * @param {Document} doc DOMParserで解析済みの新着情報画面
  * @param {string[]} enabledTopicNames 通知対象として有効化されているトピック名の一覧
  * @param {string} documentBaseUrl 相対URLを絶対URLへ変換するためのベースURL
@@ -232,16 +371,34 @@ function parseRow(row, baseMode, documentBaseUrl) {
  *   matchedPosts: import("../shared/models.js").ForumPost[],
  *   recognizedCount: number,
  *   matchedCount: number,
- *   parserMode: string
+ *   parserMode: string,
+ *   topicLinkCount: number,
+ *   rowCandidateCount: number,
+ *   topicNameFoundInHtml: boolean|null
  * }}
  */
 export function parseNewArrivals(doc, enabledTopicNames, documentBaseUrl) {
-  const { rows, mode } = findCandidateRows(doc);
+  const { topicLinkCount, rows: v6Rows } = findDesknetsV6Rows(doc);
 
-  const posts = [];
-  for (const row of rows) {
-    const post = parseRow(row, mode, documentBaseUrl);
-    if (post) posts.push(post);
+  let posts = [];
+  let mode;
+  let rowCandidateCount;
+
+  if (topicLinkCount > 0) {
+    mode = PARSER_MODE.DESKNETS_V6;
+    rowCandidateCount = v6Rows.length;
+    for (const row of v6Rows) {
+      const post = parseDesknetsV6Row(row, documentBaseUrl);
+      if (post) posts.push(post);
+    }
+  } else {
+    const { rows, mode: genericMode } = findCandidateRows(doc);
+    mode = genericMode;
+    rowCandidateCount = rows.length;
+    for (const row of rows) {
+      const post = parseRow(row, genericMode, documentBaseUrl);
+      if (post) posts.push(post);
+    }
   }
 
   const enabledSet = new Set(enabledTopicNames || []);
@@ -252,6 +409,9 @@ export function parseNewArrivals(doc, enabledTopicNames, documentBaseUrl) {
     matchedPosts,
     recognizedCount: posts.length,
     matchedCount: matchedPosts.length,
-    parserMode: mode
+    parserMode: mode,
+    topicLinkCount,
+    rowCandidateCount,
+    topicNameFoundInHtml: checkTopicNameFoundInHtml(doc, enabledTopicNames)
   };
 }
