@@ -1,6 +1,6 @@
 import { getSettings } from "../storage/settings-store.js";
 import { getRuntimeState, clearNewCountBadge } from "../storage/runtime-state-store.js";
-import { validateAndNormalizeUrl, isSameOrigin } from "../desknets/url-utils.js";
+import { validateAndNormalizeUrl, pickBestMatchingTab } from "../desknets/url-utils.js";
 import { STATUS, STATUS_LABELS } from "../shared/constants.js";
 
 const STATUS_ICON_CLASS = {
@@ -88,10 +88,11 @@ async function handleOpenForum() {
   }
 
   const tabs = await chrome.tabs.query({});
-  const existingTab = tabs.find((tab) => tab.url && isSameOrigin(tab.url, normalizedUrl));
+  const existingTab = pickBestMatchingTab(tabs, normalizedUrl);
 
   if (existingTab) {
-    await chrome.tabs.update(existingTab.id, { active: true });
+    // 既存タブを前面表示するだけで終わらせず、必ず設定済みの新着情報画面URLへ遷移させる。
+    await chrome.tabs.update(existingTab.id, { url: normalizedUrl, active: true });
     if (existingTab.windowId != null) {
       await chrome.windows.update(existingTab.windowId, { focused: true });
     }

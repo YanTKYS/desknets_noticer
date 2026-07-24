@@ -85,6 +85,13 @@
         <input type="checkbox" id="sessionExpiredNotifyEnabled" />
         ログイン切れへ変化した最初の1回だけ通知する（初期値OFF）
       </label>
+
+      <p class="hint">
+        Windows側の通知表示自体を確認したい場合は、下のボタンでdesknet's NEOへ
+        アクセスせずにテスト通知を表示できます。
+      </p>
+      <button type="button" id="testNotificationButton">テスト通知を表示</button>
+      <p id="testNotificationResult" role="status"></p>
     </section>
 
     <section>
@@ -106,10 +113,13 @@
         <dl class="debug-list">
           <div><dt>最終取得日時</dt><dd id="debugLastCheckedAt">-</dd></div>
           <div><dt>取得結果種別</dt><dd id="debugFetchResultType">-</dd></div>
+          <div><dt>トピックリンク検出件数</dt><dd id="debugTopicLinkCount">-</dd></div>
+          <div><dt>投稿行候補件数</dt><dd id="debugRowCandidateCount">-</dd></div>
           <div><dt>認識した投稿件数</dt><dd id="debugRecognizedCount">-</dd></div>
           <div><dt>対象トピック一致件数</dt><dd id="debugMatchedCount">-</dd></div>
           <div><dt>新規判定件数</dt><dd id="debugNewCount">-</dd></div>
           <div><dt>使用した解析方式</dt><dd id="debugParserMode">-</dd></div>
+          <div><dt>設定トピック名がHTML内に存在</dt><dd id="debugTopicNameFoundInHtml">-</dd></div>
           <div><dt>エラーコード</dt><dd id="debugErrorCode">-</dd></div>
         </dl>
       </details>

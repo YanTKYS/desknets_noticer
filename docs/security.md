@@ -14,6 +14,8 @@
   `textContent` を使用します（DOM解析結果の組み立ても `textContent` ベースです）。
 - 通知クリックで開くURLは、設定済みのdesknet's NEOのオリジンと同一かどうかを
   必ず検証してから開きます。
+- 設定画面の「テスト通知を表示」は `chrome.notifications.create()` のみを呼び出し、
+  desknet's NEOへは一切アクセスしません（Windows側の通知表示自体の切り分け用）。
 
 ## 権限とその理由
 

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!--
+  匿名化・架空データによるテスト用fixtureです。
+  新着投稿が1件も無い状態の電子会議室新着情報画面を想定した仮想的な構造です。
+  ページ自体は認識できる（jforum-forumlinkが存在する）が、
+  a.jforum-topiclink（トピックリンク）が0件のケースを検証するために使用します。
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>新着情報 - 電子会議室</title>
+</head>
+<body>
+  <nav>
+    <a href="#cmd=forumtlist&amp;fid=8&amp;init=1" class="jforum-forumlink" title="テスト会議室" data-fid="8">
+      テスト会議室
+    </a>
+  </nav>
+  <table class="forum-top-list">
+    <tbody>
+      <tr>
+        <td>新着はありません。</td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

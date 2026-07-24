@@ -180,6 +180,14 @@ async function performCheck() {
     );
   }
 
+  // トピックリンクが1件も見つからず、かつ何も認識できなかった場合は、パーサーが
+  // 画面変更に追従できていない可能性がある。ただし新着一覧が実際に空の可能性も
+  // あるため、状態はOKのまま維持し、診断情報にだけ記録する。
+  const diagnosticErrorCode =
+    parseResponse.topicLinkCount === 0 && parseResponse.recognizedCount === 0
+      ? ERROR_CODES.NO_TOPIC_LINKS_FOUND
+      : null;
+
   const previousState = await getRuntimeState();
   await updateRuntimeState({
     status: STATUS.OK,
@@ -191,7 +199,11 @@ async function performCheck() {
       recognizedCount: parseResponse.recognizedCount,
       matchedCount: parseResponse.matchedCount,
       newCount,
-      parserMode: parseResponse.parserMode
+      parserMode: parseResponse.parserMode,
+      topicLinkCount: parseResponse.topicLinkCount,
+      rowCandidateCount: parseResponse.rowCandidateCount,
+      topicNameFoundInHtml: parseResponse.topicNameFoundInHtml,
+      errorCode: diagnosticErrorCode
     })
   });
 
@@ -310,12 +322,38 @@ async function handleTestConnectionMessage(url) {
     if (parseResponse.pageState === "unexpected_page") {
       return { ok: false, errorCode: ERROR_CODES.UNEXPECTED_PAGE, message: "新着情報画面として認識できませんでした。" };
     }
+
+    const noTopicLinksFound = parseResponse.topicLinkCount === 0 && parseResponse.recognizedCount === 0;
+    const suffix = noTopicLinksFound
+      ? "（トピックリンクを検出できませんでした。画面が変更された可能性があります）"
+      : "";
+
     return {
       ok: true,
-      message: `接続に成功しました（認識した投稿件数: ${parseResponse.recognizedCount}件）。`
+      errorCode: noTopicLinksFound ? ERROR_CODES.NO_TOPIC_LINKS_FOUND : null,
+      message:
+        `接続に成功しました（認識した投稿件数: ${parseResponse.recognizedCount}件 / ` +
+        `対象一致: ${parseResponse.matchedCount}件）。${suffix}`
     };
   } catch {
     return { ok: false, errorCode: ERROR_CODES.PERMISSION_DENIED, message: "サイトへのアクセス権限が不足しています。" };
+  }
+}
+
+async function handleTestNotificationMessage() {
+  try {
+    const notificationId = `desknets-noticer-test-${Date.now()}`;
+    await chrome.notifications.create(notificationId, {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "desknets_noticer テスト通知",
+      message: "Windowsへの通知表示は正常です。",
+      silent: false
+    });
+    return { ok: true, message: "テスト通知を表示しました。通知が表示されない場合はOS側の通知設定をご確認ください。" };
+  } catch (error) {
+    console.error("[desknets_noticer] テスト通知の表示に失敗しました。", error);
+    return { ok: false, message: "テスト通知の表示に失敗しました。" };
   }
 }
 
@@ -358,6 +396,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "test-connection") {
     respondSafely(handleTestConnectionMessage(message.url), sendResponse);
+    return true;
+  }
+  if (message?.type === "test-notification") {
+    respondSafely(handleTestNotificationMessage(), sendResponse);
     return true;
   }
   return undefined;

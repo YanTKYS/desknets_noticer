@@ -1,8 +1,9 @@
 // desknet's NEOのページ状態（正常 / 未ログイン / 想定外画面）を判定する。
 //
-// 実際のdesknet's NEO v6.0 R1.0のログイン切れ画面・エラー画面は、まだ実機で
-// 確認できていない（docs/desknets-v6-dom-investigation.md を参照）。
-// そのため、ここでの判定はヒューリスティック（推測に基づく複数条件のOR判定）であり、
+// 実機確認により、電子会議室の新着情報画面ではjforum-topiclink / jforum-forumlink
+// といったCSSクラスが使われていることが判明した（docs/desknets-v6-dom-investigation.md
+// 参照）。一方、ログイン切れ画面・エラー画面そのものは未確認のため、ここでの判定は
+// 引き続きヒューリスティック（推測に基づく複数条件のOR判定）である。
 // 実画面のHTMLが提供され次第、選定基準を見直すこと。
 
 const LOGIN_KEYWORDS = ["ログイン", "login", "sign in", "パスワードを入力"];
@@ -56,10 +57,19 @@ export function detectPageState(document) {
   }
 
   // 新着情報画面らしい構造の手がかりが1つもない場合は「想定外の画面」として扱う。
-  // desknet's NEOの実画面確認後、より確実な判定条件（新着情報一覧のコンテナ要素など）に
-  // 置き換えること。
+  // jforum-topiclink / jforum-forumlink は実機確認済みのdesknet's NEO v6.0 R1.0の
+  // マーカー。それ以外のセレクターは実画面未確認の汎用パーサー向けの手がかり。
   const looksLikeForumPage = !!document.querySelector(
-    '[data-post-id], [data-topic-id], [data-room-id], a[href*="cabinet"], a[href*="bbs"], a[href*="forum"]'
+    [
+      "a.jforum-topiclink",
+      "a.jforum-forumlink",
+      "[data-post-id]",
+      "[data-topic-id]",
+      "[data-room-id]",
+      'a[href*="cabinet"]',
+      'a[href*="bbs"]',
+      'a[href*="forum"]'
+    ].join(", ")
   );
   if (!looksLikeForumPage) {
     return { state: "unexpected_page", reason: "no-forum-page-markers" };

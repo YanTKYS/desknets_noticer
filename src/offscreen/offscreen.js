@@ -14,7 +14,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     const pageState = detectPageState(doc);
     if (pageState.state !== "ok") {
-      sendResponse({ ok: true, pageState: pageState.state, posts: [], recognizedCount: 0, matchedCount: 0, parserMode: "unknown" });
+      sendResponse({
+        ok: true,
+        pageState: pageState.state,
+        posts: [],
+        recognizedCount: 0,
+        matchedCount: 0,
+        parserMode: "unknown",
+        topicLinkCount: 0,
+        rowCandidateCount: 0,
+        topicNameFoundInHtml: null
+      });
       return undefined;
     }
 
@@ -25,7 +35,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       posts: result.matchedPosts,
       recognizedCount: result.recognizedCount,
       matchedCount: result.matchedCount,
-      parserMode: result.parserMode
+      parserMode: result.parserMode,
+      topicLinkCount: result.topicLinkCount,
+      rowCandidateCount: result.rowCandidateCount,
+      topicNameFoundInHtml: result.topicNameFoundInHtml
     });
   } catch (error) {
     sendResponse({ ok: false, error: String(error && error.message ? error.message : error) });

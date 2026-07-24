@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { validateAndNormalizeUrl, isSameOrigin, toOriginPermissionPattern } from "../src/desknets/url-utils.js";
+import {
+  validateAndNormalizeUrl,
+  isSameOrigin,
+  toOriginPermissionPattern,
+  extractHashParam,
+  pickBestMatchingTab
+} from "../src/desknets/url-utils.js";
 
 test("httpとhttpsのURLは受け入れる", () => {
   assert.ok(validateAndNormalizeUrl("https://groupware.example.local/cgi-bin/x"));
@@ -52,4 +58,75 @@ test("オリジンの権限パターンを生成できる", () => {
     toOriginPermissionPattern("https://groupware.example.local/cgi-bin/x"),
     "https://groupware.example.local/*"
   );
+});
+
+test("ハッシュURLからfidを取得できる", () => {
+  const url = new URL(
+    "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319&init=1"
+  );
+  assert.equal(extractHashParam(url, ["fid"]), "8");
+});
+
+test("同URLからtidを取得できる", () => {
+  const url = new URL(
+    "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319&init=1"
+  );
+  assert.equal(extractHashParam(url, ["tid"]), "2319");
+});
+
+test("通常のクエリパラメーターとハッシュパラメーターを区別できる", () => {
+  const url = new URL(
+    "http://groupware.example.local/scripts/dneo/zforum.exe?fid=999#cmd=forumalist&fid=8&tid=2319"
+  );
+  // 通常のクエリパラメーター(searchParams)とハッシュパラメーターは別物であることを確認する。
+  assert.equal(url.searchParams.get("fid"), "999");
+  assert.equal(extractHashParam(url, ["fid"]), "8");
+});
+
+test("ハッシュが無いURLではnullを返す", () => {
+  const url = new URL("http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist");
+  assert.equal(extractHashParam(url, ["fid"]), null);
+});
+
+test("相対ハッシュURLを絶対URLへ変換できる（オリジン・パス・クエリを維持する）", () => {
+  const base = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist&log=on";
+  const href = "#cmd=forumalist&fid=8&tid=2319&init=1";
+  const resolved = new URL(href, base).toString();
+  assert.equal(
+    resolved,
+    "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist&log=on#cmd=forumalist&fid=8&tid=2319&init=1"
+  );
+});
+
+test("設定URLと完全一致するタブを最優先で選ぶ", () => {
+  const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumlist";
+  const tabs = [
+    { id: 1, url: "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=1&tid=2" },
+    { id: 2, url: targetUrl }
+  ];
+  const tab = pickBestMatchingTab(tabs, targetUrl);
+  assert.equal(tab.id, 2);
+});
+
+test("完全一致が無い場合はzforum.exeを開いている同一オリジンタブを選ぶ", () => {
+  const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumlist";
+  const tabs = [
+    { id: 1, url: "http://groupware.example.local/portal/top.html" },
+    { id: 2, url: "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumalist&fid=1" }
+  ];
+  const tab = pickBestMatchingTab(tabs, targetUrl);
+  assert.equal(tab.id, 2);
+});
+
+test("zforum.exeタブも完全一致タブも無い場合は同一オリジンの任意のタブを選ぶ", () => {
+  const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist";
+  const tabs = [{ id: 1, url: "http://groupware.example.local/portal/top.html" }];
+  const tab = pickBestMatchingTab(tabs, targetUrl);
+  assert.equal(tab.id, 1);
+});
+
+test("異なるオリジンのタブは選ばれない（該当なしの場合はnull）", () => {
+  const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist";
+  const tabs = [{ id: 1, url: "http://evil.example.com/scripts/dneo/zforum.exe" }];
+  assert.equal(pickBestMatchingTab(tabs, targetUrl), null);
 });
