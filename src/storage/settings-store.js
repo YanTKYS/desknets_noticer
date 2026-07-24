@@ -3,6 +3,7 @@
 import {
   DEFAULT_TOPICS,
   DEFAULT_CHECK_INTERVAL_MINUTES,
+  MAX_TOPIC_NAME_LENGTH,
   STORAGE_KEYS
 } from "../shared/constants.js";
 
@@ -88,4 +89,91 @@ export async function resetAllFirstCheckDone() {
  */
 export function getEnabledTopicNames(settings) {
   return settings.topics.filter((topic) => topic.enabled).map((topic) => topic.name);
+}
+
+/**
+ * トピック名を正規化する。前後の空白のみ除去し、大文字・小文字や全角・半角の変換、
+ * 連続空白の変更は行わない。100文字を超える分は切り詰める。
+ * @param {string} rawName
+ * @returns {string}
+ */
+export function normalizeTopicName(rawName) {
+  const trimmed = typeof rawName === "string" ? rawName.trim() : "";
+  return trimmed.slice(0, MAX_TOPIC_NAME_LENGTH);
+}
+
+/**
+ * 設定画面から入力されたトピック名・有効/無効の組を検証・正規化する。
+ * - 通知ONなのに名称が空の場合はエラーとする
+ * - 2件とも通知ONで名称が重複する場合はエラーとする
+ * @param {{name: string, enabled: boolean}[]} rawTopics
+ * @returns {{
+ *   ok: boolean,
+ *   topics: {name: string, enabled: boolean}[],
+ *   fieldErrors: Object.<number, string>,
+ *   duplicateError: string|null
+ * }}
+ */
+export function validateTopicsForSave(rawTopics) {
+  const normalized = rawTopics.map((topic) => ({
+    name: normalizeTopicName(topic.name),
+    enabled: !!topic.enabled
+  }));
+
+  const fieldErrors = {};
+  normalized.forEach((topic, index) => {
+    if (topic.enabled && topic.name === "") {
+      fieldErrors[index] = "通知を有効にする場合は、トピック名を入力してください。";
+    }
+  });
+
+  let duplicateError = null;
+  const seenEnabledNames = new Set();
+  for (const topic of normalized) {
+    if (!topic.enabled || topic.name === "") continue;
+    if (seenEnabledNames.has(topic.name)) {
+      duplicateError = "同じトピック名を複数登録することはできません。";
+      break;
+    }
+    seenEnabledNames.add(topic.name);
+  }
+
+  return {
+    ok: Object.keys(fieldErrors).length === 0 && !duplicateError,
+    topics: normalized,
+    fieldErrors,
+    duplicateError
+  };
+}
+
+/**
+ * トピック名の変更・OFF→ONへの変更があったスロットについて、初回確認完了フラグを
+ * リセットする。名称が変わらず有効状態も変わらないスロットは、既存のフラグを維持する。
+ * 現在のトピックに存在しない名称のフラグは、名称変更前の残骸として削除する。
+ * @param {{name: string, enabled: boolean}[]} previousTopics 保存前のトピック（スロット順）
+ * @param {{name: string, enabled: boolean}[]} newTopics 保存後のトピック（スロット順）
+ * @param {Object.<string, boolean>} previousFirstCheckDone
+ * @returns {Object.<string, boolean>}
+ */
+export function computeFirstCheckDoneAfterSave(previousTopics, newTopics, previousFirstCheckDone) {
+  const validNames = new Set(newTopics.map((topic) => topic.name).filter((name) => name !== ""));
+
+  const next = {};
+  for (const [name, done] of Object.entries(previousFirstCheckDone || {})) {
+    if (validNames.has(name)) {
+      next[name] = done;
+    }
+  }
+
+  newTopics.forEach((topic, index) => {
+    if (topic.name === "") return;
+    const previous = previousTopics[index];
+    const nameChanged = !previous || previous.name !== topic.name;
+    const turnedOn = !!previous && !previous.enabled && topic.enabled;
+    if (nameChanged || turnedOn) {
+      delete next[topic.name];
+    }
+  });
+
+  return next;
 }
