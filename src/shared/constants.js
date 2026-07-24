@@ -9,6 +9,8 @@ export const DEFAULT_TOPICS = [
   { name: "会議室キャンセル周知用", enabled: false }
 ];
 
+export const MAX_TOPIC_NAME_LENGTH = 100;
+
 export const CHECK_INTERVAL_MINUTES_OPTIONS = [3, 5, 10];
 export const DEFAULT_CHECK_INTERVAL_MINUTES = 5;
 

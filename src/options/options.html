@@ -12,7 +12,7 @@
     <section aria-labelledby="connection-heading">
       <h2 id="connection-heading">接続先</h2>
       <label for="monitorUrl">
-        desknet's NEOの新着情報画面URL（またはベースURL）
+        電子会議室の「新着情報」画面のURL
       </label>
       <input
         type="url"
@@ -21,15 +21,46 @@
         placeholder="https://groupware.example.local/cgi-bin/dneo/..."
         autocomplete="off"
       />
-      <p class="hint">http または https のみ登録できます。ID・パスワードは保存されません。</p>
+      <p class="hint">
+        desknet's NEOのトップ画面ではなく、電子会議室の「新着情報」画面を開いた状態のURLを
+        設定してください。http または https のみ登録できます。ID・パスワードは保存されません。
+      </p>
       <button type="button" id="testConnectionButton">接続確認</button>
       <p id="connectionResult" role="status"></p>
     </section>
 
     <section aria-labelledby="topics-heading">
       <h2 id="topics-heading">通知対象トピック</h2>
-      <p class="hint">トピック名が完全一致した投稿のみ通知します。初期状態はすべてOFFです。</p>
-      <div id="topicsList"></div>
+      <p class="hint">
+        トピック名は完全一致で判定します。自組織の電子会議室の実際のトピック名に
+        合わせて変更してください。初期状態はすべてOFFです。
+      </p>
+
+      <div class="topic-config" data-topic-index="0">
+        <h3>通知対象1</h3>
+        <label class="topic-enabled-label">
+          <input type="checkbox" id="topicEnabled0" />
+          通知する
+        </label>
+        <label for="topicName0">トピック名</label>
+        <input type="text" id="topicName0" maxlength="100" autocomplete="off" />
+        <p class="field-error" id="topicNameError0" role="alert"></p>
+        <p class="first-check-status" id="topicFirstCheckStatus0"></p>
+      </div>
+
+      <div class="topic-config" data-topic-index="1">
+        <h3>通知対象2</h3>
+        <label class="topic-enabled-label">
+          <input type="checkbox" id="topicEnabled1" />
+          通知する
+        </label>
+        <label for="topicName1">トピック名</label>
+        <input type="text" id="topicName1" maxlength="100" autocomplete="off" />
+        <p class="field-error" id="topicNameError1" role="alert"></p>
+        <p class="first-check-status" id="topicFirstCheckStatus1"></p>
+      </div>
+
+      <p class="field-error" id="topicsDuplicateError" role="alert"></p>
       <p id="allTopicsOffNotice" class="notice" hidden>
         通知対象がすべてOFFのため、投稿があっても通知されません。
       </p>

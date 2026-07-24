@@ -1,54 +1,69 @@
-import { getSettings, saveSettings, resetAllFirstCheckDone } from "../storage/settings-store.js";
+import {
+  getSettings,
+  saveSettings,
+  resetAllFirstCheckDone,
+  validateTopicsForSave,
+  computeFirstCheckDoneAfterSave
+} from "../storage/settings-store.js";
 import { getRuntimeState } from "../storage/runtime-state-store.js";
 import * as historyStore from "../storage/notification-history-store.js";
 import { validateAndNormalizeUrl, toOriginPermissionPattern } from "../desknets/url-utils.js";
-import { CHECK_INTERVAL_MINUTES_OPTIONS, DEFAULT_CHECK_INTERVAL_MINUTES } from "../shared/constants.js";
+import {
+  CHECK_INTERVAL_MINUTES_OPTIONS,
+  DEFAULT_CHECK_INTERVAL_MINUTES,
+  DEFAULT_TOPICS
+} from "../shared/constants.js";
+
+const TOPIC_SLOT_COUNT = 2;
+
+/**
+ * 設定に保存されているトピックを、常に2つのスロット（通知対象1・2）として取り出す。
+ * 保存件数が2件に満たない旧設定でも、初期値で補完する。
+ * @param {import("../storage/settings-store.js").Settings} settings
+ * @returns {{name: string, enabled: boolean}[]}
+ */
+function getTopicsForSlots(settings) {
+  return Array.from({ length: TOPIC_SLOT_COUNT }, (_, index) => {
+    const existing = settings.topics[index];
+    if (existing) return { name: existing.name, enabled: existing.enabled };
+    const fallback = DEFAULT_TOPICS[index];
+    return fallback ? { name: fallback.name, enabled: fallback.enabled } : { name: "", enabled: false };
+  });
+}
+
+function clearTopicErrors() {
+  for (let index = 0; index < TOPIC_SLOT_COUNT; index += 1) {
+    document.getElementById(`topicNameError${index}`).textContent = "";
+  }
+  document.getElementById("topicsDuplicateError").textContent = "";
+}
 
 function renderTopics(settings) {
-  const container = document.getElementById("topicsList");
-  container.textContent = "";
+  const topics = getTopicsForSlots(settings);
 
-  for (const topic of settings.topics) {
-    const wrapper = document.createElement("label");
-    wrapper.className = "topic-item";
+  topics.forEach((topic, index) => {
+    document.getElementById(`topicEnabled${index}`).checked = topic.enabled;
+    document.getElementById(`topicName${index}`).value = topic.name;
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = topic.enabled;
-    checkbox.dataset.topicName = topic.name;
-    checkbox.id = `topic-${topic.name}`;
-
-    const textNode = document.createTextNode(topic.name);
-
-    const statusSpan = document.createElement("span");
-    statusSpan.className = "first-check-status";
     const isDone = settings.firstCheckDone?.[topic.name] === true;
-    statusSpan.textContent = topic.enabled
-      ? isDone
-        ? "（初回確認 完了）"
-        : "（初回確認待ち）"
-      : "";
+    const statusEl = document.getElementById(`topicFirstCheckStatus${index}`);
+    statusEl.textContent = topic.enabled ? (isDone ? "初回確認: 完了" : "初回確認: 待ち") : "";
+  });
 
-    wrapper.appendChild(checkbox);
-    wrapper.appendChild(textNode);
-    wrapper.appendChild(statusSpan);
-    container.appendChild(wrapper);
-  }
+  clearTopicErrors();
 
-  const anyEnabled = settings.topics.some((topic) => topic.enabled);
+  const anyEnabled = topics.some((topic) => topic.enabled);
   document.getElementById("allTopicsOffNotice").hidden = anyEnabled;
 }
 
-function readTopicsFromForm(previousTopics) {
-  const checkboxes = document.querySelectorAll("#topicsList input[type=checkbox]");
-  const enabledByName = new Map();
-  checkboxes.forEach((checkbox) => {
-    enabledByName.set(checkbox.dataset.topicName, checkbox.checked);
-  });
-
-  return previousTopics.map((topic) => ({
-    name: topic.name,
-    enabled: enabledByName.has(topic.name) ? enabledByName.get(topic.name) : topic.enabled
+/**
+ * フォームから入力値をそのまま（未検証・未正規化）読み取る。
+ * @returns {{name: string, enabled: boolean}[]}
+ */
+function readTopicsFromFormRaw() {
+  return Array.from({ length: TOPIC_SLOT_COUNT }, (_, index) => ({
+    name: document.getElementById(`topicName${index}`).value,
+    enabled: document.getElementById(`topicEnabled${index}`).checked
   }));
 }
 
@@ -127,11 +142,29 @@ async function handleTestConnection() {
 
 async function handleSave() {
   const saveResultEl = document.getElementById("saveResult");
+  saveResultEl.textContent = "";
+  clearTopicErrors();
+
   const rawUrl = document.getElementById("monitorUrl").value;
   const normalizedUrl = validateAndNormalizeUrl(rawUrl);
 
   if (rawUrl.trim() !== "" && !normalizedUrl) {
     saveResultEl.textContent = "URLの形式が正しくないため保存できませんでした。";
+    return;
+  }
+
+  const currentSettings = await getSettings();
+  const previousTopics = getTopicsForSlots(currentSettings);
+  const rawTopics = readTopicsFromFormRaw();
+  const validation = validateTopicsForSave(rawTopics);
+
+  if (!validation.ok) {
+    Object.entries(validation.fieldErrors).forEach(([index, message]) => {
+      document.getElementById(`topicNameError${index}`).textContent = message;
+    });
+    if (validation.duplicateError) {
+      document.getElementById("topicsDuplicateError").textContent = validation.duplicateError;
+    }
     return;
   }
 
@@ -146,12 +179,17 @@ async function handleSave() {
     }
   }
 
-  const currentSettings = await getSettings();
-  const updatedTopics = readTopicsFromForm(currentSettings.topics);
+  const updatedTopics = validation.topics;
+  const updatedFirstCheckDone = computeFirstCheckDoneAfterSave(
+    previousTopics,
+    updatedTopics,
+    currentSettings.firstCheckDone
+  );
 
   await saveSettings({
     monitorUrl: normalizedUrl || "",
     topics: updatedTopics,
+    firstCheckDone: updatedFirstCheckDone,
     checkIntervalMinutes: readIntervalFromForm(),
     desktopNotificationsEnabled: document.getElementById("desktopNotificationsEnabled").checked,
     showAuthorInBody: document.getElementById("showAuthorInBody").checked,
