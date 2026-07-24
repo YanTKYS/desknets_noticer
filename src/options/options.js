@@ -107,6 +107,19 @@ async function handleTestConnection() {
     return;
   }
 
+  const originPattern = toOriginPermissionPattern(normalizedUrl);
+  if (originPattern) {
+    const alreadyGranted = await chrome.permissions.contains({ origins: [originPattern] });
+    if (!alreadyGranted) {
+      resultEl.textContent = "アクセス許可を確認しています…";
+      const granted = await chrome.permissions.request({ origins: [originPattern] });
+      if (!granted) {
+        resultEl.textContent = "接続先へのアクセス許可が得られなかったため、接続を確認できませんでした。";
+        return;
+      }
+    }
+  }
+
   resultEl.textContent = "確認中…";
   const response = await chrome.runtime.sendMessage({ type: "test-connection", url: normalizedUrl });
   resultEl.textContent = response?.message || "確認結果を取得できませんでした。";
