@@ -1,0 +1,135 @@
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  color: #1f2328;
+  background: #ffffff;
+}
+
+.options {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+h1 {
+  font-size: 20px;
+}
+
+h2 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+section {
+  border-bottom: 1px solid #d0d7de;
+  padding: 16px 0;
+}
+
+section:last-child {
+  border-bottom: none;
+}
+
+label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+input[type="url"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  margin-right: 6px;
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  font-size: 12px;
+  color: #57606a;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+button {
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+button:hover {
+  background: #eaeef2;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 2px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #57606a;
+}
+
+.notice {
+  font-size: 12px;
+  color: #9a6700;
+  font-weight: 600;
+}
+
+#connectionResult,
+#saveResult,
+#resetResult {
+  font-size: 13px;
+  min-height: 1.2em;
+}
+
+.topic-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.topic-item .first-check-status {
+  font-size: 11px;
+  color: #57606a;
+}
+
+.debug-list {
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.debug-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.debug-list dt {
+  color: #57606a;
+}
+
+.debug-list dd {
+  margin: 0;
+  font-weight: 600;
+}

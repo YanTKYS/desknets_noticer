@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!--
+  匿名化・架空データによるテスト用fixtureです。
+  投稿本文欄にスクリプトタグが混入した場合でも、解析結果にスクリプト内容が
+  含まれないことを検証するためのfixtureです。
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>新着情報 - 電子会議室</title>
+</head>
+<body>
+  <div id="newArrivalList">
+    <ul>
+      <li data-post-id="2001" data-room-name="総務課会議室" data-topic-name="公用車キャンセル周知用" data-author="サンプル部 サンプル七郎" data-posted-at="2026-07-24 12:00">
+        <div class="body-preview">
+          通常の本文です。
+          <script>alert("injected");</script>
+        </div>
+        <a href="https://groupware.example.local/cgi-bin/dneo/forum.cgi?cabinet_id=r1&topic_id=t1&post_no=2001">詳細</a>
+      </li>
+    </ul>
+  </div>
+</body>
+</html>

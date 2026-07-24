@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<!--
+  匿名化・架空データによるテスト用fixtureです。
+  desknet's NEOのログイン画面を模した仮想的な構造です（実画面そのものではありません）。
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ログイン - グループウェア</title>
+</head>
+<body>
+  <form action="/cgi-bin/dneo/login.cgi" method="post">
+    <label for="loginId">ログインID</label>
+    <input type="text" id="loginId" name="loginId" />
+    <label for="password">パスワード</label>
+    <input type="password" id="password" name="password" />
+    <button type="submit">ログイン</button>
+  </form>
+</body>
+</html>

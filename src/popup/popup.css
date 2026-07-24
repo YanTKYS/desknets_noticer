@@ -1,0 +1,97 @@
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  color: #1f2328;
+  background: #ffffff;
+}
+
+.popup {
+  width: 320px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.popup-header h1 {
+  font-size: 15px;
+  margin: 0 0 12px 0;
+}
+
+.status-section {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.status-icon {
+  font-size: 12px;
+}
+
+.status-icon.ok { color: #1a7f37; }
+.status-icon.warning { color: #9a6700; }
+.status-icon.error { color: #cf222e; }
+.status-icon.neutral { color: #6e7781; }
+
+.status-details {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  row-gap: 4px;
+  font-size: 12px;
+}
+
+.status-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status-details dt {
+  color: #57606a;
+}
+
+.status-details dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.actions button {
+  padding: 8px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  cursor: pointer;
+}
+
+.actions button:hover {
+  background: #eaeef2;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 2px;
+}
+
+.interval-note {
+  font-size: 11px;
+  color: #57606a;
+  margin: 0;
+}

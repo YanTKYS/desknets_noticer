@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "desknets_noticer",
+  "version": "0.1.0",
+  "description": "desknet's NEO 電子会議室の特定トピックへの新規投稿を、通知を希望する利用者だけに知らせる非公式のデスクトップ通知拡張機能です。",
+  "default_locale": "ja",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "src/options/options.html",
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "offscreen",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "host_permissions": [],
+  "minimum_chrome_version": "116"
+}

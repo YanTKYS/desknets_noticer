@@ -1,0 +1,57 @@
+// データ構造の生成ヘルパー。TypeScriptを使わないため、JSDocで形状を明示する。
+
+/**
+ * @typedef {Object} ForumPost
+ * @property {string|null} roomName 会議室名
+ * @property {string|null} roomId 会議室ID（取得できる場合）
+ * @property {string|null} topicName トピック名
+ * @property {string|null} topicId トピックID（取得できる場合）
+ * @property {string|null} postId 投稿ID（取得できる場合）
+ * @property {string|null} author 投稿者名
+ * @property {string|null} postedAt 投稿日時（表示文字列のまま）
+ * @property {string|null} bodyPreview 投稿本文の冒頭
+ * @property {string|null} url 投稿を開くURL
+ * @property {string} parserMode どの解析方式で取得できたか
+ */
+
+/**
+ * @param {Partial<ForumPost>} partial
+ * @returns {ForumPost}
+ */
+export function createForumPost(partial) {
+  return {
+    roomName: partial.roomName ?? null,
+    roomId: partial.roomId ?? null,
+    topicName: partial.topicName ?? null,
+    topicId: partial.topicId ?? null,
+    postId: partial.postId ?? null,
+    author: partial.author ?? null,
+    postedAt: partial.postedAt ?? null,
+    bodyPreview: partial.bodyPreview ?? null,
+    url: partial.url ?? null,
+    parserMode: partial.parserMode ?? "unknown"
+  };
+}
+
+/**
+ * @typedef {Object} CheckDebugInfo
+ * @property {string|null} lastCheckedAt ISO日時
+ * @property {string} fetchResultType "success" | "http-error" | "network-error"
+ * @property {number} recognizedCount 認識した投稿件数
+ * @property {number} matchedCount 対象トピック一致件数
+ * @property {number} newCount 新規判定件数
+ * @property {string} parserMode 使用した解析方式
+ * @property {string|null} errorCode
+ */
+
+export function createDebugInfo(partial) {
+  return {
+    lastCheckedAt: partial.lastCheckedAt ?? null,
+    fetchResultType: partial.fetchResultType ?? "unknown",
+    recognizedCount: partial.recognizedCount ?? 0,
+    matchedCount: partial.matchedCount ?? 0,
+    newCount: partial.newCount ?? 0,
+    parserMode: partial.parserMode ?? "unknown",
+    errorCode: partial.errorCode ?? null
+  };
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>desknet's noticer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="popup">
+    <header class="popup-header">
+      <h1>desknet's noticer</h1>
+    </header>
+
+    <section class="status-section" aria-live="polite">
+      <p class="status-line">
+        <span class="status-icon" id="statusIcon" aria-hidden="true">●</span>
+        <span class="status-text" id="statusText">確認中…</span>
+      </p>
+      <dl class="status-details">
+        <div>
+          <dt>最終確認</dt>
+          <dd id="lastCheckedAt">-</dd>
+        </div>
+        <div>
+          <dt>前回確認結果</dt>
+          <dd id="lastResult">-</dd>
+        </div>
+        <div>
+          <dt>新規検知件数</dt>
+          <dd id="newCount">0件</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="actions">
+      <button type="button" id="runNowButton">今すぐ確認</button>
+      <button type="button" id="openForumButton">電子会議室を開く</button>
+      <button type="button" id="openOptionsButton">設定</button>
+    </section>
+
+    <p class="interval-note">
+      数分間隔で自動確認します（リアルタイムではありません）。
+    </p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

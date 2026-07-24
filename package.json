@@ -1,0 +1,13 @@
+{
+  "name": "desknets_noticer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "desknet's NEO 電子会議室の新規投稿を検知する非公式Chrome拡張機能（開発用テスト定義）",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}

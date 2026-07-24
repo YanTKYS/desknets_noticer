@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>desknet's noticer 設定</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="options">
+    <h1>desknet's noticer 設定</h1>
+
+    <section aria-labelledby="connection-heading">
+      <h2 id="connection-heading">接続先</h2>
+      <label for="monitorUrl">
+        desknet's NEOの新着情報画面URL（またはベースURL）
+      </label>
+      <input
+        type="url"
+        id="monitorUrl"
+        name="monitorUrl"
+        placeholder="https://groupware.example.local/cgi-bin/dneo/..."
+        autocomplete="off"
+      />
+      <p class="hint">http または https のみ登録できます。ID・パスワードは保存されません。</p>
+      <button type="button" id="testConnectionButton">接続確認</button>
+      <p id="connectionResult" role="status"></p>
+    </section>
+
+    <section aria-labelledby="topics-heading">
+      <h2 id="topics-heading">通知対象トピック</h2>
+      <p class="hint">トピック名が完全一致した投稿のみ通知します。初期状態はすべてOFFです。</p>
+      <div id="topicsList"></div>
+      <p id="allTopicsOffNotice" class="notice" hidden>
+        通知対象がすべてOFFのため、投稿があっても通知されません。
+      </p>
+    </section>
+
+    <section aria-labelledby="interval-heading">
+      <h2 id="interval-heading">確認間隔</h2>
+      <fieldset id="intervalFieldset">
+        <legend>desknet's NEOを確認する間隔（数分間隔の目安であり、リアルタイムではありません）</legend>
+        <label><input type="radio" name="checkIntervalMinutes" value="3" /> 3分</label>
+        <label><input type="radio" name="checkIntervalMinutes" value="5" /> 5分（初期値）</label>
+        <label><input type="radio" name="checkIntervalMinutes" value="10" /> 10分</label>
+      </fieldset>
+    </section>
+
+    <section aria-labelledby="notification-heading">
+      <h2 id="notification-heading">通知設定</h2>
+      <label><input type="checkbox" id="desktopNotificationsEnabled" /> デスクトップ通知を有効にする</label>
+      <label><input type="checkbox" id="showAuthorInBody" /> 通知本文に投稿者名を表示する</label>
+      <label><input type="checkbox" id="showBodyPreviewInBody" /> 通知本文に投稿の冒頭を表示する</label>
+      <label>
+        <input type="checkbox" id="sessionExpiredNotifyEnabled" />
+        ログイン切れへ変化した最初の1回だけ通知する（初期値OFF）
+      </label>
+    </section>
+
+    <section>
+      <button type="button" id="saveButton">設定を保存</button>
+      <p id="saveResult" role="status"></p>
+    </section>
+
+    <section aria-labelledby="reset-heading">
+      <h2 id="reset-heading">状態リセット</h2>
+      <button type="button" id="resetHistoryButton">通知済み履歴をリセット</button>
+      <button type="button" id="resetFirstCheckButton">初回確認状態に戻す</button>
+      <p class="hint">リセット直後は既存投稿を再通知せず、次回確認時に新しい基準値を作成します。</p>
+      <p id="resetResult" role="status"></p>
+    </section>
+
+    <section>
+      <details id="debugDetails">
+        <summary>詳細情報（デバッグ用）</summary>
+        <dl class="debug-list">
+          <div><dt>最終取得日時</dt><dd id="debugLastCheckedAt">-</dd></div>
+          <div><dt>取得結果種別</dt><dd id="debugFetchResultType">-</dd></div>
+          <div><dt>認識した投稿件数</dt><dd id="debugRecognizedCount">-</dd></div>
+          <div><dt>対象トピック一致件数</dt><dd id="debugMatchedCount">-</dd></div>
+          <div><dt>新規判定件数</dt><dd id="debugNewCount">-</dd></div>
+          <div><dt>使用した解析方式</dt><dd id="debugParserMode">-</dd></div>
+          <div><dt>エラーコード</dt><dd id="debugErrorCode">-</dd></div>
+        </dl>
+      </details>
+    </section>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

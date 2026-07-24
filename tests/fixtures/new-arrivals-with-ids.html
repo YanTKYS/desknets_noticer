@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+  匿名化・架空データによるテスト用fixtureです。
+  実在の職員名・部署名・内部URL・Cookie・認証情報は含まれていません。
+  desknet's NEO v6.0 R1.0の実画面を確認できていないため、このHTMLは
+  「投稿IDやdata-*属性を持つ想定パターン」を検証するための仮想的な構造です。
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>新着情報 - 電子会議室</title>
+</head>
+<body>
+  <div id="newArrivalList">
+    <ul>
+      <li
+        data-post-id="1001"
+        data-room-id="room-01"
+        data-room-name="総務課会議室"
+        data-topic-id="topic-01"
+        data-topic-name="公用車キャンセル周知用"
+        data-author="サンプル部 サンプル一郎"
+        data-posted-at="2026-07-24 09:15"
+        data-body-preview="7月24日午後の公用車予約をキャンセルしました。ご確認ください。"
+      >
+        <a href="https://groupware.example.local/cgi-bin/dneo/forum.cgi?cabinet_id=room-01&topic_id=topic-01&post_no=1001">詳細</a>
+      </li>
+
+      <li
+        data-post-id="1002"
+        data-room-id="room-02"
+        data-room-name="施設管理室"
+        data-topic-id="topic-02"
+        data-topic-name="会議室キャンセル周知用"
+        data-author="サンプル部 サンプル二郎"
+        data-posted-at="2026-07-24 10:02"
+        data-body-preview="第3会議室（14:00-15:00）の予約をキャンセルしました。"
+      >
+        <a href="https://groupware.example.local/cgi-bin/dneo/forum.cgi?cabinet_id=room-02&topic_id=topic-02&post_no=1002">詳細</a>
+      </li>
+
+      <li
+        data-post-id="1003"
+        data-room-id="room-03"
+        data-room-name="雑談室"
+        data-topic-id="topic-03"
+        data-topic-name="お知らせ雑談"
+        data-author="サンプル部 サンプル三郎"
+        data-posted-at="2026-07-24 10:30"
+        data-body-preview="対象外トピックのテスト投稿です。"
+      >
+        <a href="https://groupware.example.local/cgi-bin/dneo/forum.cgi?cabinet_id=room-03&topic_id=topic-03&post_no=1003">詳細</a>
+      </li>
+
+      <!-- 投稿者名・投稿日時が欠落している行（部分欠落でも全体が停止しないことを確認） -->
+      <li
+        data-post-id="1004"
+        data-room-id="room-01"
+        data-room-name="総務課会議室"
+        data-topic-id="topic-01"
+        data-topic-name="公用車キャンセル周知用"
+        data-body-preview="投稿者名などが取得できない場合のテスト投稿です。"
+      >
+        <a href="https://groupware.example.local/cgi-bin/dneo/forum.cgi?cabinet_id=room-01&topic_id=topic-01&post_no=1004">詳細</a>
+      </li>
+    </ul>
+  </div>
+</body>
+</html>
