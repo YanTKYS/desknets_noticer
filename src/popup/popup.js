@@ -58,9 +58,21 @@ async function render() {
 
 async function handleRunNow() {
   const button = document.getElementById("runNowButton");
+  const errorEl = document.getElementById("popupError");
+  errorEl.hidden = true;
+  errorEl.textContent = "";
   button.disabled = true;
+
   try {
-    await chrome.runtime.sendMessage({ type: "run-now" });
+    const response = await chrome.runtime.sendMessage({ type: "run-now" });
+    if (!response || response.ok !== true) {
+      errorEl.textContent = "確認処理でエラーが発生しました。";
+      errorEl.hidden = false;
+    }
+  } catch (error) {
+    console.error("[desknets_noticer] 今すぐ確認の呼び出しに失敗しました。", error);
+    errorEl.textContent = "確認処理でエラーが発生しました。";
+    errorEl.hidden = false;
   } finally {
     button.disabled = false;
     await render();
