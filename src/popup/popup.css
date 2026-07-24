@@ -90,6 +90,13 @@ body {
   outline-offset: 2px;
 }
 
+.popup-error {
+  color: #cf222e;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
 .interval-note {
   font-size: 11px;
   color: #57606a;

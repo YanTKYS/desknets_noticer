@@ -7,7 +7,7 @@
 //   4. 解析結果をもとに新規投稿を判定し、通知する
 
 import { ALARM_NAME, ERROR_CODES, STATUS } from "../shared/constants.js";
-import { getSettings, getEnabledTopicNames } from "../storage/settings-store.js";
+import { getSettings, getEnabledTopicNames, saveSettings } from "../storage/settings-store.js";
 import { getRuntimeState, updateRuntimeState } from "../storage/runtime-state-store.js";
 import * as historyStore from "../storage/notification-history-store.js";
 import { fetchNewArrivalsHtml } from "../desknets/client.js";
@@ -78,109 +78,126 @@ async function recordFailure(errorCode, status, fetchResultType) {
 
 /**
  * 新着情報確認処理の本体。同時に複数実行されないよう isCheckInProgress で排他制御する。
+ * 想定外の例外が発生しても「確認中」のまま残らないよう、外側で必ず捕捉し、
+ * 状態を「最終確認でエラー」へ更新したうえで、呼び出し元へ失敗結果を返す。
+ * @returns {Promise<{ok: boolean, errorCode?: string}>}
  */
 export async function runCheck() {
-  if (isCheckInProgress) return;
+  if (isCheckInProgress) return { ok: true, skipped: true };
   isCheckInProgress = true;
 
   try {
-    const settings = await getSettings();
+    await performCheck();
+    return { ok: true };
+  } catch (error) {
+    console.error("[desknets_noticer] runCheck: 想定外のエラーが発生しました。", error);
+    await recordFailure(ERROR_CODES.UNEXPECTED_ERROR, STATUS.LAST_CHECK_ERROR, "unexpected-error");
+    return { ok: false, errorCode: ERROR_CODES.UNEXPECTED_ERROR };
+  } finally {
+    isCheckInProgress = false;
+  }
+}
 
-    const normalizedUrl = validateAndNormalizeUrl(settings.monitorUrl);
-    if (!normalizedUrl) {
-      await updateRuntimeState({ status: STATUS.NOT_CONFIGURED });
-      return;
-    }
+/**
+ * runCheckの本処理。想定内のエラー（未設定・接続失敗・認証切れ等）はここで
+ * recordFailureを呼んだうえで正常にreturnする。想定外の例外はrunCheck側の
+ * catchで処理する。
+ */
+async function performCheck() {
+  const settings = await getSettings();
 
-    await updateRuntimeState({ status: STATUS.CHECKING });
+  const normalizedUrl = validateAndNormalizeUrl(settings.monitorUrl);
+  if (!normalizedUrl) {
+    await updateRuntimeState({ status: STATUS.NOT_CONFIGURED });
+    return;
+  }
 
-    const enabledTopicNames = getEnabledTopicNames(settings);
-    if (enabledTopicNames.length === 0) {
-      await updateRuntimeState({
-        status: STATUS.OK,
-        lastCheckedAt: new Date().toISOString(),
-        debugInfo: createDebugInfo({ lastCheckedAt: new Date().toISOString(), fetchResultType: "skipped" })
-      });
-      return;
-    }
+  await updateRuntimeState({ status: STATUS.CHECKING });
 
-    const fetchResult = await fetchNewArrivalsHtml(normalizedUrl);
-    if (fetchResult.type === "network-error") {
-      await recordFailure(ERROR_CODES.CONNECTION_FAILED, STATUS.CONNECTION_FAILED, fetchResult.type);
-      return;
-    }
-    if (fetchResult.type === "http-error") {
-      const code = fetchResult.statusCode === 401 || fetchResult.statusCode === 403
-        ? ERROR_CODES.AUTH_REQUIRED
-        : ERROR_CODES.CONNECTION_FAILED;
-      const status = code === ERROR_CODES.AUTH_REQUIRED ? STATUS.AUTH_REQUIRED : STATUS.CONNECTION_FAILED;
-      await handleAuthTransition(status, settings, normalizedUrl);
-      await recordFailure(code, status, fetchResult.type);
-      return;
-    }
-
-    let parseResponse;
-    try {
-      parseResponse = await parseHtmlInOffscreen(fetchResult.html, enabledTopicNames, normalizedUrl);
-    } catch {
-      await recordFailure(ERROR_CODES.PARSER_FAILED, STATUS.LAST_CHECK_ERROR, fetchResult.type);
-      return;
-    }
-
-    if (!parseResponse || !parseResponse.ok) {
-      await recordFailure(ERROR_CODES.PARSER_FAILED, STATUS.LAST_CHECK_ERROR, fetchResult.type);
-      return;
-    }
-
-    if (parseResponse.pageState === "auth_required" || parseResponse.pageState === "permission_denied") {
-      await handleAuthTransition(STATUS.AUTH_REQUIRED, settings, normalizedUrl);
-      await recordFailure(ERROR_CODES.AUTH_REQUIRED, STATUS.AUTH_REQUIRED, fetchResult.type);
-      return;
-    }
-
-    if (parseResponse.pageState === "unexpected_page") {
-      await recordFailure(ERROR_CODES.UNEXPECTED_PAGE, STATUS.UNEXPECTED_PAGE, fetchResult.type);
-      return;
-    }
-
-    // 正常にページを認識できた場合はログイン切れ状態から復帰したとみなす。
-    await updateRuntimeState({ lastAuthRequiredNotified: false });
-
-    const posts = (parseResponse.posts || []).map((post) => createForumPost(post));
-    const { newPostsByTopic, newCount } = await classifyPosts(posts, settings, enabledTopicNames);
-
-    if (newCount > 0 && settings.desktopNotificationsEnabled) {
-      await notifyNewPosts(
-        newPostsByTopic,
-        {
-          showAuthorInBody: settings.showAuthorInBody,
-          showBodyPreviewInBody: settings.showBodyPreviewInBody
-        },
-        normalizedUrl
-      );
-    }
-
-    const previousState = await getRuntimeState();
+  const enabledTopicNames = getEnabledTopicNames(settings);
+  if (enabledTopicNames.length === 0) {
     await updateRuntimeState({
       status: STATUS.OK,
       lastCheckedAt: new Date().toISOString(),
-      newCountSinceLastPopupOpen: previousState.newCountSinceLastPopupOpen + newCount,
-      debugInfo: createDebugInfo({
-        lastCheckedAt: new Date().toISOString(),
-        fetchResultType: fetchResult.type,
-        recognizedCount: parseResponse.recognizedCount,
-        matchedCount: parseResponse.matchedCount,
-        newCount,
-        parserMode: parseResponse.parserMode
-      })
+      debugInfo: createDebugInfo({ lastCheckedAt: new Date().toISOString(), fetchResultType: "skipped" })
     });
+    return;
+  }
 
-    if (newCount > 0) {
-      await chrome.action.setBadgeText({ text: String(previousState.newCountSinceLastPopupOpen + newCount) });
-      await chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" });
-    }
-  } finally {
-    isCheckInProgress = false;
+  const fetchResult = await fetchNewArrivalsHtml(normalizedUrl);
+  if (fetchResult.type === "network-error") {
+    await recordFailure(ERROR_CODES.CONNECTION_FAILED, STATUS.CONNECTION_FAILED, fetchResult.type);
+    return;
+  }
+  if (fetchResult.type === "http-error") {
+    const code = fetchResult.statusCode === 401 || fetchResult.statusCode === 403
+      ? ERROR_CODES.AUTH_REQUIRED
+      : ERROR_CODES.CONNECTION_FAILED;
+    const status = code === ERROR_CODES.AUTH_REQUIRED ? STATUS.AUTH_REQUIRED : STATUS.CONNECTION_FAILED;
+    await handleAuthTransition(status, settings, normalizedUrl);
+    await recordFailure(code, status, fetchResult.type);
+    return;
+  }
+
+  let parseResponse;
+  try {
+    parseResponse = await parseHtmlInOffscreen(fetchResult.html, enabledTopicNames, normalizedUrl);
+  } catch {
+    await recordFailure(ERROR_CODES.PARSER_FAILED, STATUS.LAST_CHECK_ERROR, fetchResult.type);
+    return;
+  }
+
+  if (!parseResponse || !parseResponse.ok) {
+    await recordFailure(ERROR_CODES.PARSER_FAILED, STATUS.LAST_CHECK_ERROR, fetchResult.type);
+    return;
+  }
+
+  if (parseResponse.pageState === "auth_required" || parseResponse.pageState === "permission_denied") {
+    await handleAuthTransition(STATUS.AUTH_REQUIRED, settings, normalizedUrl);
+    await recordFailure(ERROR_CODES.AUTH_REQUIRED, STATUS.AUTH_REQUIRED, fetchResult.type);
+    return;
+  }
+
+  if (parseResponse.pageState === "unexpected_page") {
+    await recordFailure(ERROR_CODES.UNEXPECTED_PAGE, STATUS.UNEXPECTED_PAGE, fetchResult.type);
+    return;
+  }
+
+  // 正常にページを認識できた場合はログイン切れ状態から復帰したとみなす。
+  await updateRuntimeState({ lastAuthRequiredNotified: false });
+
+  const posts = (parseResponse.posts || []).map((post) => createForumPost(post));
+  const { newPostsByTopic, newCount } = await classifyPosts(posts, settings, enabledTopicNames);
+
+  if (newCount > 0 && settings.desktopNotificationsEnabled) {
+    await notifyNewPosts(
+      newPostsByTopic,
+      {
+        showAuthorInBody: settings.showAuthorInBody,
+        showBodyPreviewInBody: settings.showBodyPreviewInBody
+      },
+      normalizedUrl
+    );
+  }
+
+  const previousState = await getRuntimeState();
+  await updateRuntimeState({
+    status: STATUS.OK,
+    lastCheckedAt: new Date().toISOString(),
+    newCountSinceLastPopupOpen: previousState.newCountSinceLastPopupOpen + newCount,
+    debugInfo: createDebugInfo({
+      lastCheckedAt: new Date().toISOString(),
+      fetchResultType: fetchResult.type,
+      recognizedCount: parseResponse.recognizedCount,
+      matchedCount: parseResponse.matchedCount,
+      newCount,
+      parserMode: parseResponse.parserMode
+    })
+  });
+
+  if (newCount > 0) {
+    await chrome.action.setBadgeText({ text: String(previousState.newCountSinceLastPopupOpen + newCount) });
+    await chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" });
   }
 }
 
@@ -211,7 +228,7 @@ async function handleAuthTransition(newStatus, settings, normalizedUrl) {
  * @param {import("../storage/settings-store.js").Settings} settings
  * @param {string[]} enabledTopicNames
  */
-async function classifyPosts(posts, settings, enabledTopicNames) {
+export async function classifyPosts(posts, settings, enabledTopicNames) {
   const newPostsByTopic = new Map();
   let newCount = 0;
   const keysToRegister = [];
@@ -251,7 +268,6 @@ async function classifyPosts(posts, settings, enabledTopicNames) {
   await historyStore.addKeys(keysToRegister);
 
   if (Object.keys(firstCheckDoneUpdates).length > 0) {
-    const { saveSettings } = await import("../storage/settings-store.js");
     await saveSettings({ firstCheckDone: { ...settings.firstCheckDone, ...firstCheckDoneUpdates } });
   }
 
@@ -259,13 +275,13 @@ async function classifyPosts(posts, settings, enabledTopicNames) {
 }
 
 async function handleRunNowMessage() {
-  await runCheck();
+  return runCheck();
 }
 
 async function handleSettingsUpdatedMessage() {
   const settings = await getSettings();
   await ensureAlarm(settings.checkIntervalMinutes);
-  await runCheck();
+  return runCheck();
 }
 
 async function handleTestConnectionMessage(url) {
@@ -316,17 +332,32 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
   await handleNotificationClick(notificationId, normalizedUrl);
 });
 
+/**
+ * メッセージハンドラーの想定外の例外を捕捉し、必ず何らかの結果をポップアップ／
+ * 設定画面へ返す（sendResponseが呼ばれないまま終わることを防ぐ）。
+ * @param {Promise<object>} handlerPromise
+ * @param {(result: object) => void} sendResponse
+ */
+function respondSafely(handlerPromise, sendResponse) {
+  handlerPromise
+    .then((result) => sendResponse(result ?? { ok: true }))
+    .catch((error) => {
+      console.error("[desknets_noticer] メッセージ処理で想定外のエラーが発生しました。", error);
+      sendResponse({ ok: false, errorCode: ERROR_CODES.UNEXPECTED_ERROR });
+    });
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "run-now") {
-    handleRunNowMessage().then(() => sendResponse({ ok: true }));
+    respondSafely(handleRunNowMessage(), sendResponse);
     return true;
   }
   if (message?.type === "settings-updated") {
-    handleSettingsUpdatedMessage().then(() => sendResponse({ ok: true }));
+    respondSafely(handleSettingsUpdatedMessage(), sendResponse);
     return true;
   }
   if (message?.type === "test-connection") {
-    handleTestConnectionMessage(message.url).then((result) => sendResponse(result));
+    respondSafely(handleTestConnectionMessage(message.url), sendResponse);
     return true;
   }
   return undefined;
