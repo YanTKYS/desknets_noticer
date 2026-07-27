@@ -25,8 +25,13 @@
         desknet's NEOのトップ画面ではなく、電子会議室の「新着情報」画面を開いた状態のURLを
         設定してください。http または https のみ登録できます。ID・パスワードは保存されません。
       </p>
-      <button type="button" id="testConnectionButton">接続確認</button>
+      <p class="unsaved-badge" id="connectionUnsavedBadge" hidden>未保存の変更があります</p>
+      <div class="button-row">
+        <button type="button" id="testConnectionButton">接続確認</button>
+        <button type="button" id="saveConnectionButton">接続先を保存</button>
+      </div>
       <p id="connectionResult" role="status"></p>
+      <p id="connectionSaveResult" role="status"></p>
     </section>
 
     <section aria-labelledby="topics-heading">
@@ -59,6 +64,9 @@
         <label><input type="radio" name="checkIntervalMinutes" value="5" /> 5分（初期値）</label>
         <label><input type="radio" name="checkIntervalMinutes" value="10" /> 10分</label>
       </fieldset>
+      <p class="hint">
+        確認間隔の変更は、画面下部の「すべての設定を保存」で反映されます。
+      </p>
     </section>
 
     <section aria-labelledby="notification-heading">
@@ -70,6 +78,9 @@
         <input type="checkbox" id="sessionExpiredNotifyEnabled" />
         ログイン切れへ変化した最初の1回だけ通知する（初期値OFF）
       </label>
+      <p class="hint">
+        通知設定の変更は、画面下部の「すべての設定を保存」で反映されます。
+      </p>
 
       <p class="hint">
         端末の通知機能自体が使えるかを確認したい場合は、下のボタンでdesknet's NEOへ
@@ -80,7 +91,9 @@
     </section>
 
     <section>
-      <button type="button" id="saveButton">設定を保存</button>
+      <h2>すべての設定を保存</h2>
+      <p class="hint">画面内のすべての変更をまとめて保存します。</p>
+      <button type="button" id="saveButton">すべての設定を保存</button>
       <p id="saveResult" role="status"></p>
     </section>
 

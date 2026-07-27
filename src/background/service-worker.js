@@ -389,11 +389,12 @@ async function handleSendTestNotificationMessage() {
           "通知の作成要求に成功しました。\n表示されない場合は、WindowsまたはChromeの通知設定を確認してください。"
       };
     }
-    return {
-      ok: false,
-      errorCode: result.errorCode || ERROR_CODES.TEST_NOTIFICATION_FAILED,
-      message: "テスト通知を作成できませんでした。"
-    };
+    const errorCode = result.errorCode || ERROR_CODES.TEST_NOTIFICATION_FAILED;
+    const message =
+      errorCode === ERROR_CODES.NOTIFICATION_ICON_LOAD_FAILED
+        ? "テスト通知を作成できませんでした。拡張機能の通知アイコンを読み込めない可能性があります。"
+        : "テスト通知を作成できませんでした。";
+    return { ok: false, errorCode, message };
   } catch (error) {
     console.error("[desknets_noticer] テスト通知メッセージの処理に失敗しました。", error);
     return { ok: false, errorCode: ERROR_CODES.TEST_NOTIFICATION_FAILED, message: "テスト通知を作成できませんでした。" };

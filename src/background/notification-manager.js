@@ -7,6 +7,52 @@ import { isSameOrigin, pickBestMatchingTab } from "../desknets/url-utils.js";
 const NOTIFICATION_URL_MAP_KEY = "notificationUrlMap";
 
 /**
+ * 通知アイコンの拡張機能内URLを取得する。
+ * chrome.notifications.create() へ相対パス（例: "icons/icon128.png"）をそのまま
+ * 渡すと、サービスワーカーのコンテキストでは相対URL解決に失敗し
+ * 「Unable to download all specified images」エラーになることがある。
+ * 必ず chrome.runtime.getURL() で拡張機能内の絶対URLへ変換してから使用する。
+ * @returns {string}
+ */
+export function getNotificationIconUrl() {
+  return chrome.runtime.getURL("icons/icon128.png");
+}
+
+/**
+ * エラーメッセージから、アイコン画像の取得失敗によるものかどうかを判定する。
+ * @param {unknown} error
+ * @returns {string}
+ */
+function classifyNotificationError(error) {
+  const message = error && error.message ? String(error.message) : String(error);
+  if (message.includes("Unable to download all specified images")) {
+    return ERROR_CODES.NOTIFICATION_ICON_LOAD_FAILED;
+  }
+  return ERROR_CODES.NOTIFICATION_API_ERROR;
+}
+
+/**
+ * chrome.notifications.create() の共通呼び出し処理。
+ * 失敗時は原因を診断できる情報（アイコンURLとエラー内容）だけをConsoleへ出力する
+ * （投稿本文・職員名・内部URLなど利用者データはログへ出さない）。
+ * @param {string} notificationId
+ * @param {chrome.notifications.NotificationOptions} options
+ * @returns {Promise<{ok: boolean, errorCode?: string}>}
+ */
+async function createNotificationSafely(notificationId, options) {
+  try {
+    await chrome.notifications.create(notificationId, options);
+    return { ok: true };
+  } catch (error) {
+    console.error("[desknets_noticer] 通知の作成に失敗しました。", {
+      iconUrl: options.iconUrl,
+      error
+    });
+    return { ok: false, errorCode: classifyNotificationError(error) };
+  }
+}
+
+/**
  * 通知IDに紐づく遷移先URLを一時保存する（chrome.storage.sessionはブラウザ再起動で消える）。
  * @param {string} notificationId
  * @param {string} url
@@ -84,13 +130,14 @@ export async function notifyNewPosts(postsByTopic, options, fallbackUrl) {
       for (const post of posts) {
         const { title, message } = buildSinglePostNotification(post, options);
         const notificationId = `desknets-noticer-${Date.now()}-${sequence++}`;
-        await chrome.notifications.create(notificationId, {
+        const result = await createNotificationSafely(notificationId, {
           type: "basic",
-          iconUrl: "icons/icon128.png",
+          iconUrl: getNotificationIconUrl(),
           title,
           message,
           silent: false
         });
+        if (!result.ok) continue;
         // クリック時に開くURLの優先順位: 1.新着画面から取得した投稿側URL
         // 2.登録されたトピックURL 3.新着情報画面URL
         await rememberNotificationUrl(notificationId, post.url || post.__topicConfigUrl || fallbackUrl);
@@ -98,13 +145,14 @@ export async function notifyNewPosts(postsByTopic, options, fallbackUrl) {
     } else {
       const { title, message } = buildGroupedNotification(topicName, posts.length);
       const notificationId = `desknets-noticer-group-${Date.now()}-${sequence++}`;
-      await chrome.notifications.create(notificationId, {
+      const result = await createNotificationSafely(notificationId, {
         type: "basic",
-        iconUrl: "icons/icon128.png",
+        iconUrl: getNotificationIconUrl(),
         title,
         message,
         silent: false
       });
+      if (!result.ok) continue;
       await rememberNotificationUrl(notificationId, posts[0]?.__topicConfigUrl || fallbackUrl);
     }
   }
@@ -123,19 +171,13 @@ export async function sendTestNotification() {
   }
 
   const notificationId = `${TEST_NOTIFICATION_ID_PREFIX}${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  try {
-    await chrome.notifications.create(notificationId, {
-      type: "basic",
-      iconUrl: "icons/icon128.png",
-      title: "desknets_noticer テスト通知",
-      message: "Chrome拡張から通知を送信しました。この通知が表示されれば、端末の通知機能を利用できます。",
-      silent: false
-    });
-    return { ok: true };
-  } catch (error) {
-    console.error("[desknets_noticer] テスト通知の作成に失敗しました。", error);
-    return { ok: false, errorCode: ERROR_CODES.NOTIFICATION_API_ERROR };
-  }
+  return createNotificationSafely(notificationId, {
+    type: "basic",
+    iconUrl: getNotificationIconUrl(),
+    title: "desknets_noticer テスト通知",
+    message: "Chrome拡張から通知を送信しました。この通知が表示されれば、端末の通知機能を利用できます。",
+    silent: false
+  });
 }
 
 /**
@@ -144,13 +186,14 @@ export async function sendTestNotification() {
  */
 export async function notifyAuthRequiredOnce(fallbackUrl) {
   const notificationId = `desknets-noticer-auth-${Date.now()}`;
-  await chrome.notifications.create(notificationId, {
+  const result = await createNotificationSafely(notificationId, {
     type: "basic",
-    iconUrl: "icons/icon128.png",
+    iconUrl: getNotificationIconUrl(),
     title: EXTENSION_NAME,
     message: "desknet's NEOへのログインが必要です。ブラウザでログインし直してください。",
     silent: false
   });
+  if (!result.ok) return;
   await rememberNotificationUrl(notificationId, fallbackUrl);
 }
 
