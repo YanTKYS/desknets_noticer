@@ -2,12 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const sessionStore = {};
-const calls = { tabsUpdate: [], tabsCreate: [], windowsUpdate: [] };
+const calls = { tabsUpdate: [], tabsCreate: [], windowsUpdate: [], notificationsCreate: [] };
+let notificationsCreateImpl = async () => {};
 
 function installFakeChrome(tabs) {
   calls.tabsUpdate.length = 0;
   calls.tabsCreate.length = 0;
   calls.windowsUpdate.length = 0;
+  calls.notificationsCreate.length = 0;
+  notificationsCreateImpl = async () => {};
 
   globalThis.chrome = {
     storage: {
@@ -21,7 +24,10 @@ function installFakeChrome(tabs) {
       }
     },
     notifications: {
-      async create() {},
+      async create(id, options) {
+        calls.notificationsCreate.push({ id, options });
+        return notificationsCreateImpl();
+      },
       async clear() {}
     },
     tabs: {
@@ -43,7 +49,10 @@ function installFakeChrome(tabs) {
   };
 }
 
-const { handleNotificationClick, notifyNewPosts } = await import("../src/background/notification-manager.js");
+const { handleNotificationClick, notifyNewPosts, sendTestNotification } = await import(
+  "../src/background/notification-manager.js"
+);
+const { TEST_NOTIFICATION_ID_PREFIX } = await import("../src/shared/constants.js");
 
 test("通知クリック時、設定URLと完全一致するタブを新着情報画面URLへ遷移させる", async () => {
   const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319";
@@ -122,4 +131,53 @@ test("notifyNewPostsは投稿本文や職員名をそのまま長期保存しな
     assert.ok(!value.includes("テスト太郎"));
     assert.ok(!value.includes("テスト本文"));
   }
+});
+
+// --- sendTestNotification（v0.2.0 テスト通知） ----------------------------------
+
+test("sendTestNotificationはchrome.notifications.create()を呼び出す", async () => {
+  installFakeChrome([]);
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    return { ok: true, status: 200, text: async () => "" };
+  };
+
+  const result = await sendTestNotification();
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.notificationsCreate.length, 1);
+  assert.equal(fetchCalled, false, "desknet's NEOへアクセスしていないこと");
+});
+
+test("sendTestNotificationは一意な通知IDを生成する（テスト通知プレフィックス付き）", async () => {
+  installFakeChrome([]);
+  await sendTestNotification();
+  await sendTestNotification();
+
+  assert.equal(calls.notificationsCreate.length, 2);
+  const [first, second] = calls.notificationsCreate;
+  assert.notEqual(first.id, second.id);
+  assert.ok(first.id.startsWith(TEST_NOTIFICATION_ID_PREFIX));
+  assert.ok(second.id.startsWith(TEST_NOTIFICATION_ID_PREFIX));
+});
+
+test("sendTestNotificationはタイトル・本文を指定して通知を作成する", async () => {
+  installFakeChrome([]);
+  await sendTestNotification();
+
+  const { options } = calls.notificationsCreate[0];
+  assert.equal(options.title, "desknets_noticer テスト通知");
+  assert.match(options.message, /通知を送信しました/);
+});
+
+test("chrome.notifications.create()が失敗した場合はエラー結果を返す", async () => {
+  installFakeChrome([]);
+  notificationsCreateImpl = async () => {
+    throw new Error("simulated notification API failure");
+  };
+
+  const result = await sendTestNotification();
+  assert.equal(result.ok, false);
+  assert.ok(result.errorCode);
 });

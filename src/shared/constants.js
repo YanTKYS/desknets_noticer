@@ -2,14 +2,13 @@
 
 export const EXTENSION_NAME = "desknet's noticer";
 
-// 監視対象トピック（トピック名で完全一致判定を行う）。
-// 初期状態はすべてOFF。
-export const DEFAULT_TOPICS = [
-  { name: "公用車キャンセル周知用", enabled: false },
-  { name: "会議室キャンセル周知用", enabled: false }
-];
-
 export const MAX_TOPIC_NAME_LENGTH = 100;
+
+// 通知対象トピックの最大登録件数。誤操作による大量追加や設定画面の可読性低下を防ぐための上限。
+export const MAX_TOPICS = 20;
+
+// 設定データの形式バージョン。旧形式（固定2件・トピック名のみ）からの移行判定に使う。
+export const CURRENT_SETTINGS_VERSION = 2;
 
 export const CHECK_INTERVAL_MINUTES_OPTIONS = [3, 5, 10];
 export const DEFAULT_CHECK_INTERVAL_MINUTES = 5;
@@ -23,6 +22,9 @@ export const INDIVIDUAL_NOTIFICATION_LIMIT = 3;
 
 export const NOTIFICATION_BODY_MIN_LENGTH = 80;
 export const NOTIFICATION_BODY_MAX_LENGTH = 120;
+
+// テスト通知の通知IDに付与する接頭辞。クリック時に「テスト通知である」と識別するために使う。
+export const TEST_NOTIFICATION_ID_PREFIX = "desknets-noticer-test-";
 
 // ポップアップ／設定画面に表示する状態種別。
 export const STATUS = {
@@ -59,7 +61,10 @@ export const ERROR_CODES = {
   UNEXPECTED_ERROR: "UNEXPECTED_ERROR",
   DESKNETS_V6_PARSE_FAILED: "DESKNETS_V6_PARSE_FAILED",
   NO_TOPIC_LINKS_FOUND: "NO_TOPIC_LINKS_FOUND",
-  TOPIC_URL_BUILD_FAILED: "TOPIC_URL_BUILD_FAILED"
+  TOPIC_URL_BUILD_FAILED: "TOPIC_URL_BUILD_FAILED",
+  TEST_NOTIFICATION_FAILED: "TEST_NOTIFICATION_FAILED",
+  NOTIFICATION_PERMISSION_UNAVAILABLE: "NOTIFICATION_PERMISSION_UNAVAILABLE",
+  NOTIFICATION_API_ERROR: "NOTIFICATION_API_ERROR"
 };
 
 export const STORAGE_KEYS = {

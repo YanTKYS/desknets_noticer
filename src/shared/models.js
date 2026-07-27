@@ -34,6 +34,35 @@ export function createForumPost(partial) {
 }
 
 /**
+ * @typedef {Object} TopicConfig
+ * @property {string} id 拡張機能内部の設定行識別子（desknet's NEOのIDとは無関係）
+ * @property {boolean} enabled 通知の有効/無効
+ * @property {string} name 表示用トピック名（利用者が入力）
+ * @property {string} url 登録されたトピックURL
+ * @property {string|null} forumId desknet's NEOの会議室ID（fid）。URLから解析
+ * @property {string|null} topicId desknet's NEOのトピックID（tid）。URLから解析
+ * @property {boolean} firstCheckDone このトピックの初回確認が完了したか
+ * @property {boolean} [migrationRequired] 旧設定からの移行直後で、URL再設定が必要か
+ */
+
+/**
+ * @param {Partial<TopicConfig>} partial
+ * @returns {TopicConfig}
+ */
+export function createTopicConfig(partial = {}) {
+  return {
+    id: partial.id ?? null,
+    enabled: partial.enabled ?? false,
+    name: partial.name ?? "",
+    url: partial.url ?? "",
+    forumId: partial.forumId ?? null,
+    topicId: partial.topicId ?? null,
+    firstCheckDone: partial.firstCheckDone ?? false,
+    migrationRequired: partial.migrationRequired ?? false
+  };
+}
+
+/**
  * @typedef {Object} CheckDebugInfo
  * @property {string|null} lastCheckedAt ISO日時
  * @property {string} fetchResultType "success" | "http-error" | "network-error"

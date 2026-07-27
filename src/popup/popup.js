@@ -50,6 +50,20 @@ async function render() {
     : "-";
   document.getElementById("newCount").textContent = `${runtimeState.newCountSinceLastPopupOpen}件`;
 
+  const listEl = document.getElementById("detectedTopicsList");
+  listEl.textContent = "";
+  const detectedNames = runtimeState.lastDetectedTopicNames || [];
+  if (detectedNames.length > 0) {
+    detectedNames.forEach((name) => {
+      const item = document.createElement("li");
+      item.textContent = name;
+      listEl.appendChild(item);
+    });
+    listEl.hidden = false;
+  } else {
+    listEl.hidden = true;
+  }
+
   const anyTopicEnabled = settings.topics.some((topic) => topic.enabled);
   if (!anyTopicEnabled) {
     document.getElementById("statusText").textContent += "（監視対象トピックがすべてOFFです）";
@@ -106,8 +120,10 @@ function handleOpenOptions() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await clearNewCountBadge();
+  // 表示前にクリアすると「新規検知件数」が常に0件になってしまうため、
+  // まず現在の検知結果を表示してから、バッジと件数をクリアする。
   await render();
+  await clearNewCountBadge();
 
   document.getElementById("runNowButton").addEventListener("click", handleRunNow);
   document.getElementById("openForumButton").addEventListener("click", handleOpenForum);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "desknets_noticer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "desknet's NEO 電子会議室の特定トピックへの新規投稿を、通知を希望する利用者だけに知らせる非公式のデスクトップ通知拡張機能です。",
   "icons": {
     "16": "icons/icon16.png",

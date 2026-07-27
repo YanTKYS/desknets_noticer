@@ -71,25 +71,82 @@ export function toOriginPermissionPattern(url) {
 
 /**
  * desknet's NEOはハッシュルーティング（例: "#cmd=forumalist&fid=8&tid=2319&init=1"）を
- * 使用しており、fid・tidなどの識別子は通常のクエリパラメーターではなく
- * ハッシュ部分に含まれる。ハッシュ文字列をURLSearchParamsとして解析し、
- * 指定した名前のいずれかに一致する値を取り出す。
+ * 使用しており、fid・tidなどの識別子は通常のクエリパラメーター（URL.searchParams）
+ * ではなく、ハッシュ部分に含まれる。ハッシュ文字列をURLSearchParamsとして解析する。
+ * @param {URL|null} url
+ * @returns {URLSearchParams}
+ */
+export function getHashParams(url) {
+  if (!url || !url.hash) return new URLSearchParams("");
+  const rawHash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  return new URLSearchParams(rawHash);
+}
+
+/**
+ * ハッシュ部分から、指定した名前のいずれかに一致する値を取り出す。
  * @param {URL|null} url
  * @param {string[]} paramNames
  * @returns {string|null}
  */
 export function extractHashParam(url, paramNames) {
-  if (!url || !url.hash) return null;
-
-  const rawHash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-  const params = new URLSearchParams(rawHash);
-
+  const params = getHashParams(url);
   for (const name of paramNames) {
     const value = params.get(name);
     if (value) return value;
   }
-
   return null;
+}
+
+/**
+ * @typedef {Object} TopicUrlParseResult
+ * @property {boolean} ok
+ * @property {string} [url] 正規化済みURL（okの場合のみ）
+ * @property {string} [forumId]
+ * @property {string} [topicId]
+ * @property {"empty"|"invalid-url"|"missing-cmd"|"missing-fid"|"missing-tid"} [reason] 失敗理由（!okの場合のみ）
+ */
+
+/**
+ * 電子会議室のトピックURLを検証し、会議室ID（fid）・トピックID（tid）を抽出する。
+ * このオリジンが新着情報画面URLと同一かどうかまでは検証しない（呼び出し側で判定する）。
+ * @param {string} rawUrl
+ * @returns {TopicUrlParseResult}
+ */
+export function parseTopicUrl(rawUrl) {
+  const trimmed = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (trimmed === "") {
+    return { ok: false, reason: "empty" };
+  }
+
+  const normalizedUrl = validateAndNormalizeUrl(trimmed);
+  if (!normalizedUrl) {
+    return { ok: false, reason: "invalid-url" };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(normalizedUrl);
+  } catch {
+    return { ok: false, reason: "invalid-url" };
+  }
+
+  const params = getHashParams(parsed);
+
+  if (params.get("cmd") !== "forumalist") {
+    return { ok: false, reason: "missing-cmd", url: normalizedUrl };
+  }
+
+  const forumId = params.get("fid");
+  if (!forumId) {
+    return { ok: false, reason: "missing-fid", url: normalizedUrl };
+  }
+
+  const topicId = params.get("tid");
+  if (!topicId) {
+    return { ok: false, reason: "missing-tid", url: normalizedUrl };
+  }
+
+  return { ok: true, url: normalizedUrl, forumId, topicId };
 }
 
 /**

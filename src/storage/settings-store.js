@@ -1,22 +1,30 @@
 // 設定情報の永続化。chrome.storage.local のみを使用し、Chrome同期は使わない。
 
 import {
-  DEFAULT_TOPICS,
   DEFAULT_CHECK_INTERVAL_MINUTES,
   MAX_TOPIC_NAME_LENGTH,
+  MAX_TOPICS,
+  CURRENT_SETTINGS_VERSION,
   STORAGE_KEYS
 } from "../shared/constants.js";
+import { createTopicConfig } from "../shared/models.js";
+import { generateId } from "../shared/id-utils.js";
+import { validateAndNormalizeUrl, isSameOrigin, parseTopicUrl } from "../desknets/url-utils.js";
+
+/**
+ * @typedef {import("../shared/models.js").TopicConfig} TopicConfig
+ */
 
 /**
  * @typedef {Object} Settings
- * @property {string} monitorUrl desknet's NEOの新着情報画面URL（またはベースURL）
+ * @property {string} monitorUrl desknet's NEOの新着情報画面URL
  * @property {number} checkIntervalMinutes 確認間隔（3, 5, 10のいずれか）
- * @property {{name: string, enabled: boolean}[]} topics 監視対象トピック
+ * @property {TopicConfig[]} topics 通知対象トピック（利用者が追加・削除・編集する動的な配列）
  * @property {boolean} desktopNotificationsEnabled デスクトップ通知の有効/無効
  * @property {boolean} showAuthorInBody 通知本文に投稿者名を表示するか
  * @property {boolean} showBodyPreviewInBody 通知本文に投稿冒頭を表示するか
  * @property {boolean} sessionExpiredNotifyEnabled ログイン切れの初回のみ通知するか
- * @property {Object.<string, boolean>} firstCheckDone トピックごとの初回確認完了フラグ
+ * @property {number} settingsVersion 設定データの形式バージョン
  */
 
 /**
@@ -26,13 +34,65 @@ function defaultSettings() {
   return {
     monitorUrl: "",
     checkIntervalMinutes: DEFAULT_CHECK_INTERVAL_MINUTES,
-    topics: DEFAULT_TOPICS.map((topic) => ({ ...topic })),
+    topics: [],
     desktopNotificationsEnabled: true,
     showAuthorInBody: true,
     showBodyPreviewInBody: true,
     sessionExpiredNotifyEnabled: false,
-    firstCheckDone: {}
+    settingsVersion: CURRENT_SETTINGS_VERSION
   };
+}
+
+/**
+ * 旧形式のトピック（{name, enabled}のみで、id/urlを持たない）かどうかを判定する。
+ * @param {object} topic
+ * @returns {boolean}
+ */
+function isLegacyTopic(topic) {
+  return !!topic && typeof topic === "object" && !("id" in topic) && !("url" in topic);
+}
+
+/**
+ * v0.1.x以前の固定2件・トピック名のみの設定を、v0.2.0の動的トピック設定へ移行する。
+ * 移行後のトピックは、URLが未設定のため安全側でOFFへ変更し、`migrationRequired`を
+ * 立てる。移行は`settingsVersion`で管理し、複数回実行しても重複生成しない。
+ * @param {object|undefined} existing
+ * @returns {object|undefined} 移行後の設定オブジェクト。移行不要な場合は引数をそのまま返す。
+ */
+function migrateSettingsIfNeeded(existing) {
+  if (!existing) return existing;
+  if (typeof existing.settingsVersion === "number" && existing.settingsVersion >= CURRENT_SETTINGS_VERSION) {
+    return existing;
+  }
+
+  if (!Array.isArray(existing.topics)) {
+    const { firstCheckDone, ...rest } = existing;
+    return { ...rest, topics: [], settingsVersion: CURRENT_SETTINGS_VERSION };
+  }
+
+  const looksLegacy = existing.topics.some(isLegacyTopic);
+  if (!looksLegacy) {
+    return { ...existing, settingsVersion: CURRENT_SETTINGS_VERSION };
+  }
+
+  const migratedTopics = existing.topics.map((legacyTopic) =>
+    createTopicConfig({
+      id: generateId(),
+      // URLが無いままでは新着照合ができないため、安全側としてOFFへ変更する。
+      enabled: false,
+      name: typeof legacyTopic?.name === "string" ? legacyTopic.name : "",
+      url: "",
+      forumId: null,
+      topicId: null,
+      firstCheckDone: false,
+      migrationRequired: true
+    })
+  );
+
+  // 旧トップレベルのfirstCheckDoneマップは、各トピック設定内で管理する方式へ
+  // 置き換えたため破棄する。
+  const { firstCheckDone, ...rest } = existing;
+  return { ...rest, topics: migratedTopics, settingsVersion: CURRENT_SETTINGS_VERSION };
 }
 
 /**
@@ -40,17 +100,22 @@ function defaultSettings() {
  */
 export async function getSettings() {
   const stored = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
-  const defaults = defaultSettings();
   const existing = stored[STORAGE_KEYS.SETTINGS];
-  if (!existing) return defaults;
+
+  if (!existing) {
+    return defaultSettings();
+  }
+
+  const migrated = migrateSettingsIfNeeded(existing);
+  if (migrated !== existing) {
+    // 移行が発生した場合は即座に永続化し、次回以降は移行処理が再実行されないようにする。
+    await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: migrated });
+  }
 
   return {
-    ...defaults,
-    ...existing,
-    topics: Array.isArray(existing.topics) && existing.topics.length > 0
-      ? existing.topics
-      : defaults.topics,
-    firstCheckDone: existing.firstCheckDone || {}
+    ...defaultSettings(),
+    ...migrated,
+    topics: Array.isArray(migrated.topics) ? migrated.topics : []
   };
 }
 
@@ -66,29 +131,20 @@ export async function saveSettings(partialSettings) {
 }
 
 /**
- * 指定トピックの初回確認完了フラグをfalseに戻す（設定リセット用）。
- * @param {string} topicName
- */
-export async function clearFirstCheckDone(topicName) {
-  const current = await getSettings();
-  const firstCheckDone = { ...current.firstCheckDone };
-  delete firstCheckDone[topicName];
-  await saveSettings({ firstCheckDone });
-}
-
-/**
- * すべてのトピックの初回確認完了フラグをリセットする。
+ * すべてのトピックの初回確認完了フラグをリセットする（設定画面の「初回確認状態に戻す」用）。
  */
 export async function resetAllFirstCheckDone() {
-  await saveSettings({ firstCheckDone: {} });
+  const current = await getSettings();
+  const topics = current.topics.map((topic) => ({ ...topic, firstCheckDone: false }));
+  await saveSettings({ topics });
 }
 
 /**
  * @param {Settings} settings
- * @returns {string[]}
+ * @returns {TopicConfig[]}
  */
-export function getEnabledTopicNames(settings) {
-  return settings.topics.filter((topic) => topic.enabled).map((topic) => topic.name);
+export function getEnabledTopicConfigs(settings) {
+  return settings.topics.filter((topic) => topic.enabled);
 }
 
 /**
@@ -102,78 +158,145 @@ export function normalizeTopicName(rawName) {
   return trimmed.slice(0, MAX_TOPIC_NAME_LENGTH);
 }
 
+const TOPIC_URL_ERROR_MESSAGES = {
+  "invalid-url": "URLの形式が正しくありません。",
+  "missing-cmd": "トピックURLの形式が正しくありません（電子会議室のトピックを開いた状態のURLを貼り付けてください）。",
+  "missing-fid": "URLから会議室ID（fid）を取得できません。",
+  "missing-tid": "URLからトピックID（tid）を取得できません。"
+};
+
 /**
- * 設定画面から入力されたトピック名・有効/無効の組を検証・正規化する。
- * - 通知ONなのに名称が空の場合はエラーとする
- * - 2件とも通知ONで名称が重複する場合はエラーとする
- * @param {{name: string, enabled: boolean}[]} rawTopics
+ * 設定画面から入力されたトピック設定の配列を検証・正規化する。
+ *
+ * - 名称・URLの両方が空の行は「未入力の追加直後カード」とみなし、保存対象から除外する
+ *   （エラーにはしない）。
+ * - 片方だけ入力されている行、または通知ONの行は、名称・URLの両方が必須。
+ * - URLは同一オリジン（monitorUrl側）であること、cmd=forumalistであること、
+ *   fid・tidが取得できることを検証する。
+ * - forumId・topicIdの組み合わせが重複する行があれば、全体を保存拒否する。
+ * - 登録件数（保存対象として残った件数）が上限を超える場合も保存拒否する。
+ *
+ * @param {{id: string, enabled: boolean, name: string, url: string}[]} rawTopics
+ * @param {string} monitorUrl 新着情報画面の正規化済みURL（未設定の場合は空文字）
  * @returns {{
  *   ok: boolean,
- *   topics: {name: string, enabled: boolean}[],
- *   fieldErrors: Object.<number, string>,
- *   duplicateError: string|null
+ *   topics: TopicConfig[],
+ *   fieldErrors: Object.<number, string[]>,
+ *   duplicateError: string|null,
+ *   countError: string|null
  * }}
  */
-export function validateTopicsForSave(rawTopics) {
-  const normalized = rawTopics.map((topic) => ({
-    name: normalizeTopicName(topic.name),
-    enabled: !!topic.enabled
-  }));
-
+export function validateTopicConfigsForSave(rawTopics, monitorUrl) {
   const fieldErrors = {};
-  normalized.forEach((topic, index) => {
-    if (topic.enabled && topic.name === "") {
-      fieldErrors[index] = "通知を有効にする場合は、トピック名を入力してください。";
+  const topics = [];
+
+  rawTopics.forEach((raw, index) => {
+    const name = normalizeTopicName(raw.name);
+    const url = typeof raw.url === "string" ? raw.url.trim() : "";
+    const enabled = !!raw.enabled;
+
+    // 追加直後の未入力カードは、保存対象から静かに除外する（エラーにはしない）。
+    if (name === "" && url === "") {
+      return;
     }
+
+    const errors = [];
+
+    if (name === "") {
+      errors.push("トピック名を入力してください。");
+    }
+
+    // 通知ONの場合は名称・URLの両方を必須とする。通知OFFの場合、URLが未入力の
+    // 行は「移行直後などURL未設定の保留中トピック」として保存を許可する
+    // （旧設定からの移行直後に、全カードのURL入力を強制して保存自体をブロック
+    // しないため）。URLが入力されている場合は、ON/OFFに関わらず内容を検証する。
+    let parsedUrl = null;
+    if (url === "") {
+      if (enabled) {
+        errors.push("電子会議室のトピックURLを入力してください。");
+      }
+    } else {
+      parsedUrl = parseTopicUrl(url);
+      if (!parsedUrl.ok) {
+        errors.push(TOPIC_URL_ERROR_MESSAGES[parsedUrl.reason] || "URLの形式が正しくありません。");
+      } else if (monitorUrl && !isSameOrigin(parsedUrl.url, monitorUrl)) {
+        errors.push("新着情報画面と異なるサーバーのURLは登録できません。");
+      }
+    }
+
+    if (errors.length > 0) {
+      fieldErrors[index] = errors;
+      return;
+    }
+
+    topics.push(
+      createTopicConfig({
+        id: raw.id || generateId(),
+        enabled,
+        name,
+        url: parsedUrl ? parsedUrl.url : "",
+        forumId: parsedUrl ? parsedUrl.forumId : null,
+        topicId: parsedUrl ? parsedUrl.topicId : null,
+        firstCheckDone: !!raw.firstCheckDone,
+        migrationRequired: false
+      })
+    );
   });
 
   let duplicateError = null;
-  const seenEnabledNames = new Set();
-  for (const topic of normalized) {
-    if (!topic.enabled || topic.name === "") continue;
-    if (seenEnabledNames.has(topic.name)) {
-      duplicateError = "同じトピック名を複数登録することはできません。";
+  const seenPairs = new Set();
+  for (const topic of topics) {
+    if (!topic.forumId || !topic.topicId) continue;
+    const pairKey = `${topic.forumId}|${topic.topicId}`;
+    if (seenPairs.has(pairKey)) {
+      duplicateError = "同じ電子会議室トピックが複数登録されています。";
       break;
     }
-    seenEnabledNames.add(topic.name);
+    seenPairs.add(pairKey);
+  }
+
+  let countError = null;
+  if (topics.length > MAX_TOPICS) {
+    countError = "通知対象は最大20件まで登録できます。";
   }
 
   return {
-    ok: Object.keys(fieldErrors).length === 0 && !duplicateError,
-    topics: normalized,
+    ok: Object.keys(fieldErrors).length === 0 && !duplicateError && !countError,
+    topics,
     fieldErrors,
-    duplicateError
+    duplicateError,
+    countError
   };
 }
 
 /**
- * トピック名の変更・OFF→ONへの変更があったスロットについて、初回確認完了フラグを
- * リセットする。名称が変わらず有効状態も変わらないスロットは、既存のフラグを維持する。
- * 現在のトピックに存在しない名称のフラグは、名称変更前の残骸として削除する。
- * @param {{name: string, enabled: boolean}[]} previousTopics 保存前のトピック（スロット順）
- * @param {{name: string, enabled: boolean}[]} newTopics 保存後のトピック（スロット順）
- * @param {Object.<string, boolean>} previousFirstCheckDone
- * @returns {Object.<string, boolean>}
+ * 保存直前の（検証済み）トピック一覧に対して、初回確認完了フラグを整理する。
+ * - 新規追加されたトピック（同じidが以前に存在しない）は必ずfalseへ
+ * - forumId・topicIdが変わった（別トピックとみなす）場合はfalseへ
+ * - OFF→ONに変わった場合は、安全側としてfalseへ戻す
+ *   （長期間OFFの間の投稿が履歴に残っておらず、ON直後に古い投稿を誤通知するのを防ぐ）
+ * - 上記以外（名称のみ変更、ON→OFF、変化なし）は既存のfirstCheckDoneを維持する
+ * @param {TopicConfig[]} previousTopics 保存前のトピック一覧
+ * @param {TopicConfig[]} newTopics 保存しようとしているトピック一覧
+ * @returns {TopicConfig[]} firstCheckDoneを調整したトピック一覧
  */
-export function computeFirstCheckDoneAfterSave(previousTopics, newTopics, previousFirstCheckDone) {
-  const validNames = new Set(newTopics.map((topic) => topic.name).filter((name) => name !== ""));
+export function reconcileFirstCheckDoneOnSave(previousTopics, newTopics) {
+  const previousById = new Map(previousTopics.map((topic) => [topic.id, topic]));
 
-  const next = {};
-  for (const [name, done] of Object.entries(previousFirstCheckDone || {})) {
-    if (validNames.has(name)) {
-      next[name] = done;
-    }
-  }
+  return newTopics.map((topic) => {
+    const previous = previousById.get(topic.id);
 
-  newTopics.forEach((topic, index) => {
-    if (topic.name === "") return;
-    const previous = previousTopics[index];
-    const nameChanged = !previous || previous.name !== topic.name;
-    const turnedOn = !!previous && !previous.enabled && topic.enabled;
-    if (nameChanged || turnedOn) {
-      delete next[topic.name];
+    if (!previous) {
+      return { ...topic, firstCheckDone: false };
     }
+
+    const idsChanged = previous.forumId !== topic.forumId || previous.topicId !== topic.topicId;
+    const turnedOn = !previous.enabled && topic.enabled;
+
+    if (idsChanged || turnedOn) {
+      return { ...topic, firstCheckDone: false };
+    }
+
+    return { ...topic, firstCheckDone: previous.firstCheckDone === true };
   });
-
-  return next;
 }

@@ -18,7 +18,7 @@
         type="url"
         id="monitorUrl"
         name="monitorUrl"
-        placeholder="https://groupware.example.local/cgi-bin/dneo/..."
+        placeholder="https://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist"
         autocomplete="off"
       />
       <p class="hint">
@@ -31,39 +31,24 @@
 
     <section aria-labelledby="topics-heading">
       <h2 id="topics-heading">通知対象トピック</h2>
+      <p id="migrationNotice" class="notice" hidden>
+        以前の設定を引き継ぎました。通知を再開するには、対象トピックのURLを入力してください。
+      </p>
       <p class="hint">
-        トピック名は完全一致で判定します。自組織の電子会議室の実際のトピック名に
-        合わせて変更してください。初期状態はすべてOFFです。
+        自組織の電子会議室で対象トピックを開き、アドレスバーのURLをコピーして
+        「トピックURL」欄へ貼り付けてください。トピック名は完全一致で判定します
+        （前後の空白を除き、表記ゆれは吸収されません）。最大20件まで登録できます。
       </p>
 
-      <div class="topic-config" data-topic-index="0">
-        <h3>通知対象1</h3>
-        <label class="topic-enabled-label">
-          <input type="checkbox" id="topicEnabled0" />
-          通知する
-        </label>
-        <label for="topicName0">トピック名</label>
-        <input type="text" id="topicName0" maxlength="100" autocomplete="off" />
-        <p class="field-error" id="topicNameError0" role="alert"></p>
-        <p class="first-check-status" id="topicFirstCheckStatus0"></p>
-      </div>
-
-      <div class="topic-config" data-topic-index="1">
-        <h3>通知対象2</h3>
-        <label class="topic-enabled-label">
-          <input type="checkbox" id="topicEnabled1" />
-          通知する
-        </label>
-        <label for="topicName1">トピック名</label>
-        <input type="text" id="topicName1" maxlength="100" autocomplete="off" />
-        <p class="field-error" id="topicNameError1" role="alert"></p>
-        <p class="first-check-status" id="topicFirstCheckStatus1"></p>
-      </div>
+      <div id="topicsContainer"></div>
 
       <p class="field-error" id="topicsDuplicateError" role="alert"></p>
-      <p id="allTopicsOffNotice" class="notice" hidden>
-        通知対象がすべてOFFのため、投稿があっても通知されません。
-      </p>
+      <p class="field-error" id="topicsCountError" role="alert"></p>
+      <p id="noTopicsNotice" class="notice" hidden>通知対象トピックが登録されていません。</p>
+      <p id="allTopicsOffNotice" class="notice" hidden>通知対象トピックがすべてOFFです。</p>
+
+      <button type="button" id="addTopicButton">＋ トピックを追加</button>
+      <p id="maxTopicsNotice" class="notice" hidden>通知対象は最大20件まで登録できます。</p>
     </section>
 
     <section aria-labelledby="interval-heading">
@@ -87,10 +72,10 @@
       </label>
 
       <p class="hint">
-        Windows側の通知表示自体を確認したい場合は、下のボタンでdesknet's NEOへ
-        アクセスせずにテスト通知を表示できます。
+        端末の通知機能自体が使えるかを確認したい場合は、下のボタンでdesknet's NEOへ
+        アクセスせずにテスト通知を送信できます。
       </p>
-      <button type="button" id="testNotificationButton">テスト通知を表示</button>
+      <button type="button" id="testNotificationButton">テスト通知を送信</button>
       <p id="testNotificationResult" role="status"></p>
     </section>
 
