@@ -20,7 +20,10 @@ function installFakeChrome({ throwOnSettingsGet } = {}) {
       },
       onInstalled: { addListener() {} },
       onStartup: { addListener() {} },
-      sendMessage: async () => ({ ok: true, pageState: "ok", posts: [], recognizedCount: 0, matchedCount: 0, parserMode: "unknown" })
+      sendMessage: async () => ({ ok: true, pageState: "ok", posts: [], recognizedCount: 0, matchedCount: 0, parserMode: "unknown" }),
+      getURL(path) {
+        return `chrome-extension://test-extension-id/${path}`;
+      }
     },
     alarms: {
       onAlarm: { addListener() {} },

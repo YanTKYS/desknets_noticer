@@ -18,6 +18,11 @@
   desknet's NEOへは一切アクセスしません（端末の通知機能そのものの切り分け用）。
   通知の作成要求に成功したかどうかまでしか判定できず、実際にWindowsのバナーへ
   表示されたかどうかまでは判定できません。
+- すべての通知（新着投稿・テスト通知・ログイン切れ通知）は、`chrome.runtime.getURL()`
+  で解決した拡張機能内の画像URLをアイコンとして使用します。相対パスをそのまま
+  渡すとサービスワーカーのコンテキストで画像取得に失敗することがあるため、
+  `src/background/notification-manager.js` の共通関数
+  （`getNotificationIconUrl()` / `createNotificationSafely()`）に集約しています。
 
 ## 権限とその理由
 

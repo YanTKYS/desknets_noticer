@@ -16,6 +16,7 @@ globalThis.confirm = () => true;
 dom.window.confirm = () => true;
 
 const store = {};
+const sentMessages = [];
 
 globalThis.chrome = {
   storage: {
@@ -37,7 +38,10 @@ globalThis.chrome = {
     }
   },
   runtime: {
-    sendMessage: async () => ({ ok: true })
+    sendMessage: async (message) => {
+      sentMessages.push(message);
+      return { ok: true };
+    }
   }
 };
 
@@ -67,26 +71,87 @@ test("初期状態ではトピックが0件で、「登録されていません�
   assert.equal(document.getElementById("noTopicsNotice").hidden, false);
 });
 
-test("「トピックを追加」で空のカードが追加される", async () => {
+test("接続確認の右側に「接続先を保存」ボタンがある", () => {
+  const testButton = document.getElementById("testConnectionButton");
+  const saveButton = document.getElementById("saveConnectionButton");
+  assert.ok(testButton);
+  assert.ok(saveButton);
+  assert.equal(saveButton.textContent, "接続先を保存");
+
+  // DOM順序として接続確認の後に接続先を保存が続くことを確認する
+  const row = testButton.parentElement;
+  const children = Array.from(row.children);
+  assert.ok(children.indexOf(testButton) < children.indexOf(saveButton));
+});
+
+test("画面下部に「すべての設定を保存」がある", () => {
+  const button = document.getElementById("saveButton");
+  assert.equal(button.textContent, "すべての設定を保存");
+});
+
+test("接続先URLを入力すると未保存表示になる", () => {
+  const urlInput = document.getElementById("monitorUrl");
+  urlInput.value = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist";
+  dispatch(urlInput, "input");
+
+  assert.equal(document.getElementById("connectionUnsavedBadge").hidden, false);
+});
+
+test("接続確認だけでは接続先は保存されない", async () => {
+  document.getElementById("testConnectionButton").click();
+  await flushMicrotasks();
+
+  assert.equal(store.settings, undefined);
+  assert.equal(document.getElementById("connectionUnsavedBadge").hidden, false);
+});
+
+test("「接続先を保存」でURLが保存され、未保存表示が消える", async () => {
+  document.getElementById("saveConnectionButton").click();
+  await flushMicrotasks();
+
+  assert.equal(store.settings.monitorUrl, "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist");
+  assert.equal(document.getElementById("connectionSaveResult").textContent, "接続先を保存しました。");
+  assert.equal(document.getElementById("connectionUnsavedBadge").hidden, true);
+});
+
+test("保存済みURLと入力欄の値が同じ場合、接続確認は未保存扱いにしない", async () => {
+  document.getElementById("testConnectionButton").click();
+  await flushMicrotasks();
+  assert.equal(document.getElementById("connectionUnsavedBadge").hidden, true);
+});
+
+test("「トピックを追加」で空のカードが追加され、保存ボタンが削除ボタンの左側にある", async () => {
   document.getElementById("addTopicButton").click();
   await flushMicrotasks();
 
   const cards = document.querySelectorAll("#topicsContainer .topic-card");
   assert.equal(cards.length, 1);
   assert.equal(document.getElementById("noTopicsNotice").hidden, true);
+
+  const card = cards[0];
+  const saveButton = card.querySelector(".topic-save-button");
+  const deleteButton = card.querySelector(".topic-delete-button");
+  assert.ok(saveButton);
+  assert.ok(deleteButton);
+
+  const actionsRow = saveButton.parentElement;
+  const children = Array.from(actionsRow.children);
+  assert.ok(children.indexOf(saveButton) < children.indexOf(deleteButton));
 });
 
-test("トピック名とURLを入力し、保存すると設定に反映される", async () => {
-  document.getElementById("monitorUrl").value = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist";
-  dispatch(document.getElementById("monitorUrl"), "input");
-
+test("トピック名・URLを入力すると未保存表示になる", async () => {
   const card = document.querySelector("#topicsContainer .topic-card");
   const nameInput = card.querySelector('input[type="text"]');
-  const urlInput = card.querySelector('input[type="url"]');
-  const enabledCheckbox = card.querySelector('input[type="checkbox"]');
-
   nameInput.value = "公用車予約キャンセル周知用";
   dispatch(nameInput, "input");
+
+  assert.equal(card.querySelector(".unsaved-badge").hidden, false);
+});
+
+test("「このトピックを保存」で指定カードだけを保存できる", async () => {
+  const card = document.querySelector("#topicsContainer .topic-card");
+  const urlInput = card.querySelector('input[type="url"]');
+  const enabledCheckbox = card.querySelector('input[type="checkbox"]');
 
   urlInput.value = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319";
   dispatch(urlInput, "input");
@@ -95,15 +160,17 @@ test("トピック名とURLを入力し、保存すると設定に反映され�
   dispatch(enabledCheckbox, "change");
   await flushMicrotasks();
 
-  document.getElementById("saveButton").click();
+  const refreshedCard = document.querySelector("#topicsContainer .topic-card");
+  refreshedCard.querySelector(".topic-save-button").click();
   await flushMicrotasks();
 
-  assert.equal(document.getElementById("saveResult").textContent, "保存しました。");
+  assert.equal(refreshedCard.querySelector(".topic-save-result").textContent, "このトピックを保存しました。");
   assert.equal(store.settings.topics.length, 1);
   assert.equal(store.settings.topics[0].name, "公用車予約キャンセル周知用");
   assert.equal(store.settings.topics[0].forumId, "8");
   assert.equal(store.settings.topics[0].topicId, "2319");
   assert.equal(store.settings.topics[0].enabled, true);
+  assert.equal(refreshedCard.querySelector(".unsaved-badge").hidden, true);
 });
 
 test("保存後に再読み込みしても入力内容が保持されている", async () => {
@@ -115,14 +182,104 @@ test("保存後に再読み込みしても入力内容が保持されている",
   assert.equal(status.textContent, "初回確認: 待ち");
 });
 
-test("削除ボタンで確認ダイアログのあと通知対象を削除できる", async () => {
-  document.querySelector("#topicsContainer .topic-delete-button").click();
+test("既存トピックを編集して個別保存できる（更新）", async () => {
+  const card = document.querySelector("#topicsContainer .topic-card");
+  const nameInput = card.querySelector('input[type="text"]');
+  nameInput.value = "公用車予約取消連絡";
+  dispatch(nameInput, "input");
+
+  card.querySelector(".topic-save-button").click();
   await flushMicrotasks();
 
-  assert.equal(document.querySelectorAll("#topicsContainer .topic-card").length, 0);
+  assert.equal(store.settings.topics.length, 1);
+  assert.equal(store.settings.topics[0].name, "公用車予約取消連絡");
+  // firstCheckDoneはfid/tid変更が無いため維持される
+  assert.equal(store.settings.topics[0].firstCheckDone, false);
+});
+
+test("他カードに未保存の変更があっても、個別保存では意図せず保存しない", async () => {
+  document.getElementById("addTopicButton").click();
+  await flushMicrotasks();
+
+  const cards = document.querySelectorAll("#topicsContainer .topic-card");
+  const secondCard = cards[1];
+  const secondNameInput = secondCard.querySelector('input[type="text"]');
+  secondNameInput.value = "まだ保存していないトピック";
+  dispatch(secondNameInput, "input");
+
+  const firstCard = cards[0];
+  firstCard.querySelector(".topic-save-button").click();
+  await flushMicrotasks();
+
+  assert.equal(store.settings.topics.length, 1, "未保存の2件目は保存されない");
+  assert.equal(firstCard.querySelector(".topic-save-result").textContent, "このトピックを保存しました。");
+});
+
+test("空のカードのまま個別保存しようとするとエラーになる", async () => {
+  const cards = document.querySelectorAll("#topicsContainer .topic-card");
+  const emptyCard = cards[1];
+  const nameInput = emptyCard.querySelector('input[type="text"]');
+  nameInput.value = "";
+  dispatch(nameInput, "input");
+
+  emptyCard.querySelector(".topic-save-button").click();
+  await flushMicrotasks();
+
+  assert.equal(store.settings.topics.length, 1);
+  assert.match(emptyCard.querySelector(".field-error").textContent, /トピック名とトピックURLを入力/);
+});
+
+test("削除ボタンで確認ダイアログのあと通知対象を削除できる（保存前なのでストレージ操作は発生しない）", async () => {
+  const cards = document.querySelectorAll("#topicsContainer .topic-card");
+  assert.equal(cards.length, 2);
+  cards[1].querySelector(".topic-delete-button").click();
+  await flushMicrotasks();
+
+  assert.equal(document.querySelectorAll("#topicsContainer .topic-card").length, 1);
+  assert.equal(store.settings.topics.length, 1, "保存前の削除はストレージへ反映されない");
+});
+
+test("「すべての設定を保存」で全設定を一括保存できる", async () => {
+  document.getElementById("addTopicButton").click();
+  await flushMicrotasks();
+
+  const cards = document.querySelectorAll("#topicsContainer .topic-card");
+  const newCard = cards[1];
+  newCard.querySelector('input[type="text"]').value = "会議室予約キャンセル周知用";
+  dispatch(newCard.querySelector('input[type="text"]'), "input");
+  newCard.querySelector('input[type="url"]').value =
+    "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=9&tid=4471";
+  dispatch(newCard.querySelector('input[type="url"]'), "input");
 
   document.getElementById("saveButton").click();
   await flushMicrotasks();
 
-  assert.equal(store.settings.topics.length, 0);
+  assert.equal(document.getElementById("saveResult").textContent, "すべての設定を保存しました。");
+  assert.equal(store.settings.topics.length, 2);
+});
+
+test("保存中は対象ボタンが無効化される", async () => {
+  // saveConnectionSettings実行中に一瞬disabledになることを確認する
+  // （chrome.runtime.sendMessageの解決を遅延させて検証する）。
+  let resolveSendMessage;
+  const originalSendMessage = chrome.runtime.sendMessage;
+  chrome.runtime.sendMessage = (message) =>
+    new Promise((resolve) => {
+      resolveSendMessage = () => resolve(originalSendMessage(message));
+    });
+
+  const saveButton = document.getElementById("saveConnectionButton");
+  saveButton.click();
+
+  for (let i = 0; i < 20 && !resolveSendMessage; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.ok(resolveSendMessage, "chrome.runtime.sendMessageが呼び出されていること");
+  assert.equal(saveButton.disabled, true);
+
+  resolveSendMessage();
+  await flushMicrotasks();
+  assert.equal(saveButton.disabled, false);
+
+  chrome.runtime.sendMessage = originalSendMessage;
 });

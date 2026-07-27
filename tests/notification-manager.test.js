@@ -13,6 +13,11 @@ function installFakeChrome(tabs) {
   notificationsCreateImpl = async () => {};
 
   globalThis.chrome = {
+    runtime: {
+      getURL(path) {
+        return `chrome-extension://test-extension-id/${path}`;
+      }
+    },
     storage: {
       session: {
         async get(key) {
@@ -49,7 +54,7 @@ function installFakeChrome(tabs) {
   };
 }
 
-const { handleNotificationClick, notifyNewPosts, sendTestNotification } = await import(
+const { handleNotificationClick, notifyNewPosts, sendTestNotification, notifyAuthRequiredOnce } = await import(
   "../src/background/notification-manager.js"
 );
 const { TEST_NOTIFICATION_ID_PREFIX } = await import("../src/shared/constants.js");
@@ -180,4 +185,76 @@ test("chrome.notifications.create()が失敗した場合はエラー結果を返
   const result = await sendTestNotification();
   assert.equal(result.ok, false);
   assert.ok(result.errorCode);
+});
+
+// --- 通知アイコンURL（v0.2.1） ---------------------------------------------------
+
+test("テスト通知はchrome.runtime.getURL()で解決した絶対URLをiconUrlへ渡す（相対パスを直接渡さない）", async () => {
+  installFakeChrome([]);
+  await sendTestNotification();
+
+  const { options } = calls.notificationsCreate[0];
+  assert.equal(options.iconUrl, "chrome-extension://test-extension-id/icons/icon128.png");
+});
+
+test("新着通知（個別）もchrome.runtime.getURL()由来のiconUrlを使う", async () => {
+  installFakeChrome([]);
+  const postsByTopic = new Map([
+    [
+      "公用車キャンセル周知用",
+      [{ topicName: "公用車キャンセル周知用", author: null, postedAt: null, bodyPreview: null, url: "http://groupware.example.local/1" }]
+    ]
+  ]);
+
+  await notifyNewPosts(postsByTopic, { showAuthorInBody: true, showBodyPreviewInBody: true }, "http://groupware.example.local/");
+
+  assert.equal(calls.notificationsCreate.length, 1);
+  assert.equal(calls.notificationsCreate[0].options.iconUrl, "chrome-extension://test-extension-id/icons/icon128.png");
+});
+
+test("新着通知（まとめ）もchrome.runtime.getURL()由来のiconUrlを使う", async () => {
+  installFakeChrome([]);
+  const posts = Array.from({ length: 4 }, (_, i) => ({
+    topicName: "公用車キャンセル周知用",
+    author: null,
+    postedAt: null,
+    bodyPreview: null,
+    url: `http://groupware.example.local/${i}`
+  }));
+  const postsByTopic = new Map([["公用車キャンセル周知用", posts]]);
+
+  await notifyNewPosts(postsByTopic, { showAuthorInBody: true, showBodyPreviewInBody: true }, "http://groupware.example.local/");
+
+  assert.equal(calls.notificationsCreate.length, 1);
+  assert.equal(calls.notificationsCreate[0].options.iconUrl, "chrome-extension://test-extension-id/icons/icon128.png");
+});
+
+test("ログイン切れ通知もchrome.runtime.getURL()由来のiconUrlを使う", async () => {
+  installFakeChrome([]);
+  await notifyAuthRequiredOnce("http://groupware.example.local/");
+
+  assert.equal(calls.notificationsCreate.length, 1);
+  assert.equal(calls.notificationsCreate[0].options.iconUrl, "chrome-extension://test-extension-id/icons/icon128.png");
+});
+
+test("「Unable to download all specified images」エラーは専用エラーコードに分類される", async () => {
+  installFakeChrome([]);
+  notificationsCreateImpl = async () => {
+    throw new Error("Unable to download all specified images.");
+  };
+
+  const result = await sendTestNotification();
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "NOTIFICATION_ICON_LOAD_FAILED");
+});
+
+test("アイコン読み込み失敗以外のエラーは汎用のAPIエラーコードになる", async () => {
+  installFakeChrome([]);
+  notificationsCreateImpl = async () => {
+    throw new Error("some other failure");
+  };
+
+  const result = await sendTestNotification();
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "NOTIFICATION_API_ERROR");
 });
