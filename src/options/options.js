@@ -2,69 +2,206 @@ import {
   getSettings,
   saveSettings,
   resetAllFirstCheckDone,
-  validateTopicsForSave,
-  computeFirstCheckDoneAfterSave
+  validateTopicConfigsForSave,
+  reconcileFirstCheckDoneOnSave
 } from "../storage/settings-store.js";
 import { getRuntimeState } from "../storage/runtime-state-store.js";
 import * as historyStore from "../storage/notification-history-store.js";
-import { validateAndNormalizeUrl, toOriginPermissionPattern } from "../desknets/url-utils.js";
+import { validateAndNormalizeUrl, toOriginPermissionPattern, parseTopicUrl } from "../desknets/url-utils.js";
+import { generateId } from "../shared/id-utils.js";
 import {
   CHECK_INTERVAL_MINUTES_OPTIONS,
   DEFAULT_CHECK_INTERVAL_MINUTES,
-  DEFAULT_TOPICS
+  MAX_TOPICS
 } from "../shared/constants.js";
 
-const TOPIC_SLOT_COUNT = 2;
+/** @type {import("../shared/models.js").TopicConfig[]} 画面上で編集中のトピック一覧（保存前の作業コピー） */
+let workingTopics = [];
+/** @type {import("../shared/models.js").TopicConfig[]} 直近に保存された（読み込み時点の）トピック一覧 */
+let previousTopics = [];
 
-/**
- * 設定に保存されているトピックを、常に2つのスロット（通知対象1・2）として取り出す。
- * 保存件数が2件に満たない旧設定でも、初期値で補完する。
- * @param {import("../storage/settings-store.js").Settings} settings
- * @returns {{name: string, enabled: boolean}[]}
- */
-function getTopicsForSlots(settings) {
-  return Array.from({ length: TOPIC_SLOT_COUNT }, (_, index) => {
-    const existing = settings.topics[index];
-    if (existing) return { name: existing.name, enabled: existing.enabled };
-    const fallback = DEFAULT_TOPICS[index];
-    return fallback ? { name: fallback.name, enabled: fallback.enabled } : { name: "", enabled: false };
-  });
+function findWorkingTopicIndex(id) {
+  return workingTopics.findIndex((topic) => topic.id === id);
 }
 
-function clearTopicErrors() {
-  for (let index = 0; index < TOPIC_SLOT_COUNT; index += 1) {
-    document.getElementById(`topicNameError${index}`).textContent = "";
-  }
+function clearGeneralTopicErrors() {
   document.getElementById("topicsDuplicateError").textContent = "";
+  document.getElementById("topicsCountError").textContent = "";
 }
 
-function renderTopics(settings) {
-  const topics = getTopicsForSlots(settings);
-
-  topics.forEach((topic, index) => {
-    document.getElementById(`topicEnabled${index}`).checked = topic.enabled;
-    document.getElementById(`topicName${index}`).value = topic.name;
-
-    const isDone = settings.firstCheckDone?.[topic.name] === true;
-    const statusEl = document.getElementById(`topicFirstCheckStatus${index}`);
-    statusEl.textContent = topic.enabled ? (isDone ? "初回確認: 完了" : "初回確認: 待ち") : "";
+function clearAllCardFieldErrors() {
+  document.querySelectorAll("#topicsContainer .field-error").forEach((el) => {
+    el.textContent = "";
   });
-
-  clearTopicErrors();
-
-  const anyEnabled = topics.some((topic) => topic.enabled);
-  document.getElementById("allTopicsOffNotice").hidden = anyEnabled;
 }
 
 /**
- * フォームから入力値をそのまま（未検証・未正規化）読み取る。
- * @returns {{name: string, enabled: boolean}[]}
+ * 1件分のトピック設定カードのDOM要素を組み立てる。
+ * 利用者が入力する値はすべて `.value` / `.textContent` で設定し、`innerHTML` は使用しない。
+ * @param {import("../shared/models.js").TopicConfig} topic
+ * @param {number} displayIndex 画面表示用の連番（1始まり）
+ * @returns {HTMLElement}
  */
-function readTopicsFromFormRaw() {
-  return Array.from({ length: TOPIC_SLOT_COUNT }, (_, index) => ({
-    name: document.getElementById(`topicName${index}`).value,
-    enabled: document.getElementById(`topicEnabled${index}`).checked
-  }));
+function buildTopicCard(topic, displayIndex) {
+  const card = document.createElement("div");
+  card.className = "topic-card";
+  card.dataset.topicClientId = topic.id;
+
+  const header = document.createElement("div");
+  header.className = "topic-card-header";
+
+  const heading = document.createElement("h3");
+  heading.textContent = `通知対象${displayIndex}`;
+  header.appendChild(heading);
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "topic-delete-button";
+  deleteButton.textContent = "削除";
+  deleteButton.addEventListener("click", () => {
+    const index = findWorkingTopicIndex(topic.id);
+    if (index === -1) return;
+    const current = workingTopics[index];
+    const message = current.name
+      ? `「${current.name}」を通知対象から削除しますか？`
+      : "この通知対象を削除しますか？";
+    if (!window.confirm(message)) return;
+    workingTopics.splice(index, 1);
+    renderTopicsContainer();
+  });
+  header.appendChild(deleteButton);
+
+  card.appendChild(header);
+
+  const enabledLabel = document.createElement("label");
+  enabledLabel.className = "topic-enabled-label";
+  const enabledCheckbox = document.createElement("input");
+  enabledCheckbox.type = "checkbox";
+  enabledCheckbox.checked = topic.enabled;
+  enabledCheckbox.addEventListener("change", () => {
+    const index = findWorkingTopicIndex(topic.id);
+    if (index === -1) return;
+    workingTopics[index] = { ...workingTopics[index], enabled: enabledCheckbox.checked };
+    renderTopicsContainer();
+  });
+  enabledLabel.appendChild(enabledCheckbox);
+  enabledLabel.appendChild(document.createTextNode(" 通知する"));
+  card.appendChild(enabledLabel);
+
+  const nameLabelId = `topicName-${topic.id}`;
+  const nameLabel = document.createElement("label");
+  nameLabel.setAttribute("for", nameLabelId);
+  nameLabel.textContent = "トピック名";
+  card.appendChild(nameLabel);
+
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.id = nameLabelId;
+  nameInput.maxLength = 100;
+  nameInput.autocomplete = "off";
+  nameInput.value = topic.name;
+  nameInput.addEventListener("input", () => {
+    const index = findWorkingTopicIndex(topic.id);
+    if (index === -1) return;
+    workingTopics[index] = { ...workingTopics[index], name: nameInput.value };
+  });
+  card.appendChild(nameInput);
+
+  const urlLabelId = `topicUrl-${topic.id}`;
+  const urlLabel = document.createElement("label");
+  urlLabel.setAttribute("for", urlLabelId);
+  urlLabel.textContent = "トピックURL";
+  card.appendChild(urlLabel);
+
+  const urlInput = document.createElement("input");
+  urlInput.type = "url";
+  urlInput.id = urlLabelId;
+  urlInput.autocomplete = "off";
+  urlInput.value = topic.url;
+  card.appendChild(urlInput);
+
+  const idsDisplay = document.createElement("p");
+  idsDisplay.className = "topic-ids-display";
+
+  function updateIdsDisplay(forumId, topicId) {
+    idsDisplay.textContent = `会議室ID：${forumId ?? "-"}　トピックID：${topicId ?? "-"}`;
+  }
+  updateIdsDisplay(topic.forumId, topic.topicId);
+
+  urlInput.addEventListener("input", () => {
+    const index = findWorkingTopicIndex(topic.id);
+    if (index === -1) return;
+
+    const parsed = parseTopicUrl(urlInput.value);
+    const forumId = parsed.ok ? parsed.forumId : null;
+    const parsedTopicId = parsed.ok ? parsed.topicId : null;
+    workingTopics[index] = {
+      ...workingTopics[index],
+      url: urlInput.value,
+      forumId,
+      topicId: parsedTopicId
+    };
+    updateIdsDisplay(forumId, parsedTopicId);
+  });
+
+  card.appendChild(idsDisplay);
+
+  const firstCheckStatus = document.createElement("p");
+  firstCheckStatus.className = "first-check-status";
+  firstCheckStatus.textContent = topic.enabled ? (topic.firstCheckDone ? "初回確認: 完了" : "初回確認: 待ち") : "";
+  card.appendChild(firstCheckStatus);
+
+  if (topic.migrationRequired) {
+    const migrationHint = document.createElement("p");
+    migrationHint.className = "notice";
+    migrationHint.textContent = "以前の設定から引き継ぎました。URLを入力して保存してください。";
+    card.appendChild(migrationHint);
+  }
+
+  const fieldError = document.createElement("p");
+  fieldError.className = "field-error";
+  fieldError.setAttribute("role", "alert");
+  card.appendChild(fieldError);
+
+  return card;
+}
+
+function updateAddButtonState() {
+  const addButton = document.getElementById("addTopicButton");
+  const maxNotice = document.getElementById("maxTopicsNotice");
+  const atMax = workingTopics.length >= MAX_TOPICS;
+  addButton.disabled = atMax;
+  maxNotice.hidden = !atMax;
+}
+
+function renderTopicsContainer() {
+  const container = document.getElementById("topicsContainer");
+  container.textContent = "";
+
+  workingTopics.forEach((topic, index) => {
+    container.appendChild(buildTopicCard(topic, index + 1));
+  });
+
+  document.getElementById("noTopicsNotice").hidden = workingTopics.length !== 0;
+  const anyEnabled = workingTopics.some((topic) => topic.enabled);
+  document.getElementById("allTopicsOffNotice").hidden = workingTopics.length === 0 || anyEnabled;
+
+  updateAddButtonState();
+}
+
+function handleAddTopic() {
+  if (workingTopics.length >= MAX_TOPICS) return;
+  workingTopics.push({
+    id: generateId(),
+    enabled: false,
+    name: "",
+    url: "",
+    forumId: null,
+    topicId: null,
+    firstCheckDone: false,
+    migrationRequired: false
+  });
+  renderTopicsContainer();
 }
 
 function renderInterval(settings) {
@@ -113,7 +250,12 @@ async function renderDebugInfo() {
 async function loadAndRender() {
   const settings = await getSettings();
   document.getElementById("monitorUrl").value = settings.monitorUrl;
-  renderTopics(settings);
+
+  previousTopics = settings.topics;
+  workingTopics = settings.topics.map((topic) => ({ ...topic }));
+  document.getElementById("migrationNotice").hidden = !workingTopics.some((topic) => topic.migrationRequired);
+
+  renderTopicsContainer();
   renderInterval(settings);
   renderNotificationOptions(settings);
   await renderDebugInfo();
@@ -151,7 +293,8 @@ async function handleTestConnection() {
 async function handleSave() {
   const saveResultEl = document.getElementById("saveResult");
   saveResultEl.textContent = "";
-  clearTopicErrors();
+  clearGeneralTopicErrors();
+  clearAllCardFieldErrors();
 
   const rawUrl = document.getElementById("monitorUrl").value;
   const normalizedUrl = validateAndNormalizeUrl(rawUrl);
@@ -161,17 +304,20 @@ async function handleSave() {
     return;
   }
 
-  const currentSettings = await getSettings();
-  const previousTopics = getTopicsForSlots(currentSettings);
-  const rawTopics = readTopicsFromFormRaw();
-  const validation = validateTopicsForSave(rawTopics);
+  const validation = validateTopicConfigsForSave(workingTopics, normalizedUrl || "");
 
   if (!validation.ok) {
-    Object.entries(validation.fieldErrors).forEach(([index, message]) => {
-      document.getElementById(`topicNameError${index}`).textContent = message;
+    const cards = document.querySelectorAll("#topicsContainer .topic-card");
+    Object.entries(validation.fieldErrors).forEach(([index, messages]) => {
+      const card = cards[Number(index)];
+      const errorEl = card?.querySelector(".field-error");
+      if (errorEl) errorEl.textContent = messages.join(" ");
     });
     if (validation.duplicateError) {
       document.getElementById("topicsDuplicateError").textContent = validation.duplicateError;
+    }
+    if (validation.countError) {
+      document.getElementById("topicsCountError").textContent = validation.countError;
     }
     return;
   }
@@ -187,17 +333,11 @@ async function handleSave() {
     }
   }
 
-  const updatedTopics = validation.topics;
-  const updatedFirstCheckDone = computeFirstCheckDoneAfterSave(
-    previousTopics,
-    updatedTopics,
-    currentSettings.firstCheckDone
-  );
+  const reconciledTopics = reconcileFirstCheckDoneOnSave(previousTopics, validation.topics);
 
   await saveSettings({
     monitorUrl: normalizedUrl || "",
-    topics: updatedTopics,
-    firstCheckDone: updatedFirstCheckDone,
+    topics: reconciledTopics,
     checkIntervalMinutes: readIntervalFromForm(),
     desktopNotificationsEnabled: document.getElementById("desktopNotificationsEnabled").checked,
     showAuthorInBody: document.getElementById("showAuthorInBody").checked,
@@ -213,14 +353,14 @@ async function handleSave() {
 
 async function handleTestNotification() {
   const resultEl = document.getElementById("testNotificationResult");
-  resultEl.textContent = "表示を試みています…";
+  resultEl.textContent = "送信しています…";
 
   try {
-    const response = await chrome.runtime.sendMessage({ type: "test-notification" });
-    resultEl.textContent = response?.message || "テスト通知の結果を取得できませんでした。";
+    const response = await chrome.runtime.sendMessage({ type: "send-test-notification" });
+    resultEl.textContent = response?.message || "テスト通知を作成できませんでした。";
   } catch (error) {
     console.error("[desknets_noticer] テスト通知の呼び出しに失敗しました。", error);
-    resultEl.textContent = "テスト通知の表示に失敗しました。";
+    resultEl.textContent = "テスト通知を作成できませんでした。";
   }
 }
 
@@ -252,6 +392,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("testConnectionButton").addEventListener("click", handleTestConnection);
   document.getElementById("testNotificationButton").addEventListener("click", handleTestNotification);
+  document.getElementById("addTopicButton").addEventListener("click", handleAddTopic);
   document.getElementById("saveButton").addEventListener("click", handleSave);
   document.getElementById("resetHistoryButton").addEventListener("click", handleResetHistory);
   document.getElementById("resetFirstCheckButton").addEventListener("click", handleResetFirstCheck);

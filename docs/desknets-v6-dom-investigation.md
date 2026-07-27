@@ -147,6 +147,22 @@ http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist&log=on#cmd=
 異なる識別キーとなり新着として検知できます。投稿本文や職員名そのものは
 `chrome.storage.local`へ保存せず、ハッシュ値だけを保存します。
 
+## 対象トピックの照合方法（v0.2.0、確認済みの構造にもとづく設計）
+
+v0.2.0では、通知対象トピックの設定に会議室ID（`fid`）・トピックID（`tid`）を
+保存し、新着情報画面から取得した投稿の`roomId`・`topicId`（＝`data-fid`・
+`data-tid`から取得した値）と照合します（`src/desknets/topic-matcher.js`）。
+
+優先順位:
+
+1. 設定側の`forumId`・`topicId`の両方が、投稿側の`roomId`・`topicId`と一致する
+2. `forumId`・`topicId`を持たない設定（旧バージョンからの移行直後など）に限り、
+   トピック名の完全一致で照合する
+3. 上記のいずれにも一致しない投稿は対象外とする
+
+この方式により、電子会議室側でトピック名が変更されても、`fid`・`tid`が
+変わらなければ同一トピックとして継続して検知できます。
+
 ## 採用したDOMセレクター（優先順位）
 
 `src/desknets/forum-parser.js` は、desknet's NEO v6専用パーサー

@@ -4,16 +4,26 @@
 //   1. chrome.alarms / 起動時 / 「今すぐ確認」から runCheck() が呼ばれる
 //   2. desknet's NEOの新着情報画面をfetchで取得（読み取り専用、credentials: include）
 //   3. サービスワーカーにはDOM APIが無いため、オフスクリーンドキュメントへHTMLを渡してDOM解析する
-//   4. 解析結果をもとに新規投稿を判定し、通知する
+//   4. 解析結果ともとに、forumId・topicId（無ければトピック名）を優先して
+//      設定済みトピックと照合し、新規投稿を判定・通知する
+//
+// 新着情報画面は1回だけ取得し、登録済みの全トピックと照合する
+// （トピックURLごとに個別fetchは行わない。登録件数が増えても通信回数は変わらない）。
 
-import { ALARM_NAME, ERROR_CODES, STATUS } from "../shared/constants.js";
-import { getSettings, getEnabledTopicNames, saveSettings } from "../storage/settings-store.js";
+import { ALARM_NAME, ERROR_CODES, STATUS, TEST_NOTIFICATION_ID_PREFIX } from "../shared/constants.js";
+import { getSettings, getEnabledTopicConfigs, saveSettings } from "../storage/settings-store.js";
 import { getRuntimeState, updateRuntimeState } from "../storage/runtime-state-store.js";
 import * as historyStore from "../storage/notification-history-store.js";
 import { fetchNewArrivalsHtml } from "../desknets/client.js";
 import { validateAndNormalizeUrl } from "../desknets/url-utils.js";
+import { matchPostsToTopicConfigs } from "../desknets/topic-matcher.js";
 import { ensureAlarm } from "./alarm-manager.js";
-import { notifyNewPosts, notifyAuthRequiredOnce, handleNotificationClick } from "./notification-manager.js";
+import {
+  notifyNewPosts,
+  notifyAuthRequiredOnce,
+  handleNotificationClick,
+  sendTestNotification
+} from "./notification-manager.js";
 import { createDebugInfo, createForumPost } from "../shared/models.js";
 import { sha256Hex, buildCompositeKeySource } from "../shared/text-utils.js";
 
@@ -114,8 +124,8 @@ async function performCheck() {
 
   await updateRuntimeState({ status: STATUS.CHECKING });
 
-  const enabledTopicNames = getEnabledTopicNames(settings);
-  if (enabledTopicNames.length === 0) {
+  const enabledConfigs = getEnabledTopicConfigs(settings);
+  if (enabledConfigs.length === 0) {
     await updateRuntimeState({
       status: STATUS.OK,
       lastCheckedAt: new Date().toISOString(),
@@ -123,6 +133,8 @@ async function performCheck() {
     });
     return;
   }
+
+  const enabledTopicNames = enabledConfigs.map((config) => config.name).filter(Boolean);
 
   const fetchResult = await fetchNewArrivalsHtml(normalizedUrl);
   if (fetchResult.type === "network-error") {
@@ -167,7 +179,15 @@ async function performCheck() {
   await updateRuntimeState({ lastAuthRequiredNotified: false });
 
   const posts = (parseResponse.posts || []).map((post) => createForumPost(post));
-  const { newPostsByTopic, newCount } = await classifyPosts(posts, settings, enabledTopicNames);
+  const matchedPairs = matchPostsToTopicConfigs(posts, enabledConfigs);
+  const { newPostsByTopic, newCount, firstCheckDoneUpdatesById } = await classifyPosts(enabledConfigs, matchedPairs);
+
+  if (Object.keys(firstCheckDoneUpdatesById).length > 0) {
+    const updatedTopics = settings.topics.map((topic) =>
+      firstCheckDoneUpdatesById[topic.id] ? { ...topic, firstCheckDone: true } : topic
+    );
+    await saveSettings({ topics: updatedTopics });
+  }
 
   if (newCount > 0 && settings.desktopNotificationsEnabled) {
     await notifyNewPosts(
@@ -189,10 +209,16 @@ async function performCheck() {
       : null;
 
   const previousState = await getRuntimeState();
+  const lastDetectedTopicNames =
+    newCount > 0
+      ? Array.from(new Set([...(previousState.lastDetectedTopicNames || []), ...newPostsByTopic.keys()]))
+      : previousState.lastDetectedTopicNames || [];
+
   await updateRuntimeState({
     status: STATUS.OK,
     lastCheckedAt: new Date().toISOString(),
     newCountSinceLastPopupOpen: previousState.newCountSinceLastPopupOpen + newCount,
+    lastDetectedTopicNames,
     debugInfo: createDebugInfo({
       lastCheckedAt: new Date().toISOString(),
       fetchResultType: fetchResult.type,
@@ -234,31 +260,42 @@ async function handleAuthTransition(newStatus, settings, normalizedUrl) {
 }
 
 /**
- * 対象トピックごとに新規投稿を判定する。
- * トピックが初回確認済みでない場合は、現在の投稿を基準値として登録するのみで通知しない。
- * @param {import("../shared/models.js").ForumPost[]} posts
- * @param {import("../storage/settings-store.js").Settings} settings
- * @param {string[]} enabledTopicNames
+ * 有効なトピック設定ごとに新規投稿を判定する。
+ * トピックが初回確認済みでない場合は、現在の投稿を基準値として登録するのみで通知しない
+ * （このラウンドに一致する投稿が0件でも、初回確認自体は完了として扱う）。
+ * @param {import("../shared/models.js").TopicConfig[]} enabledConfigs
+ * @param {{post: import("../shared/models.js").ForumPost, config: import("../shared/models.js").TopicConfig}[]} matchedPairs
+ * @returns {Promise<{
+ *   newPostsByTopic: Map<string, import("../shared/models.js").ForumPost[]>,
+ *   newCount: number,
+ *   firstCheckDoneUpdatesById: Object.<string, boolean>
+ * }>}
  */
-export async function classifyPosts(posts, settings, enabledTopicNames) {
+export async function classifyPosts(enabledConfigs, matchedPairs) {
+  const postsByConfigId = new Map();
+  for (const { post, config } of matchedPairs) {
+    if (!postsByConfigId.has(config.id)) postsByConfigId.set(config.id, []);
+    postsByConfigId.get(config.id).push(post);
+  }
+
   const newPostsByTopic = new Map();
   let newCount = 0;
   const keysToRegister = [];
-  const firstCheckDoneUpdates = {};
+  const firstCheckDoneUpdatesById = {};
 
-  for (const topicName of enabledTopicNames) {
-    const topicPosts = posts.filter((post) => post.topicName === topicName);
-    const isFirstCheck = settings.firstCheckDone?.[topicName] !== true;
+  for (const config of enabledConfigs) {
+    const posts = postsByConfigId.get(config.id) || [];
+    const isFirstCheck = config.firstCheckDone !== true;
 
     const keyedPosts = [];
-    for (const post of topicPosts) {
+    for (const post of posts) {
       const key = await computeIdentifierKey(post);
       keyedPosts.push({ post, key });
     }
 
     if (isFirstCheck) {
       for (const { key } of keyedPosts) keysToRegister.push(key);
-      firstCheckDoneUpdates[topicName] = true;
+      firstCheckDoneUpdatesById[config.id] = true;
       continue;
     }
 
@@ -266,24 +303,25 @@ export async function classifyPosts(posts, settings, enabledTopicNames) {
     for (const { post, key } of keyedPosts) {
       const alreadyNotified = await historyStore.hasKey(key);
       if (!alreadyNotified) {
-        newPosts.push(post);
+        newPosts.push({ ...post, __topicConfigUrl: config.url || null });
         keysToRegister.push(key);
       }
     }
 
     if (newPosts.length > 0) {
-      newPostsByTopic.set(topicName, newPosts);
+      // 通知タイトルは、新着画面から実際に取得したトピック名を優先し、
+      // 無ければ設定済みのトピック名を使う。
+      const displayName = newPosts[0].topicName || config.name || null;
+      const groupKey = displayName || `config:${config.id}`;
+      const existing = newPostsByTopic.get(groupKey) || [];
+      newPostsByTopic.set(groupKey, existing.concat(newPosts));
       newCount += newPosts.length;
     }
   }
 
   await historyStore.addKeys(keysToRegister);
 
-  if (Object.keys(firstCheckDoneUpdates).length > 0) {
-    await saveSettings({ firstCheckDone: { ...settings.firstCheckDone, ...firstCheckDoneUpdates } });
-  }
-
-  return { newPostsByTopic, newCount };
+  return { newPostsByTopic, newCount, firstCheckDoneUpdatesById };
 }
 
 async function handleRunNowMessage() {
@@ -312,7 +350,8 @@ async function handleTestConnectionMessage(url) {
 
   try {
     const settings = await getSettings();
-    const parseResponse = await parseHtmlInOffscreen(fetchResult.html, getEnabledTopicNames(settings), normalizedUrl);
+    const enabledTopicNames = getEnabledTopicConfigs(settings).map((config) => config.name).filter(Boolean);
+    const parseResponse = await parseHtmlInOffscreen(fetchResult.html, enabledTopicNames, normalizedUrl);
     if (!parseResponse || !parseResponse.ok) {
       return { ok: false, errorCode: ERROR_CODES.PARSER_FAILED, message: "画面の解析に失敗しました。" };
     }
@@ -340,20 +379,24 @@ async function handleTestConnectionMessage(url) {
   }
 }
 
-async function handleTestNotificationMessage() {
+async function handleSendTestNotificationMessage() {
   try {
-    const notificationId = `desknets-noticer-test-${Date.now()}`;
-    await chrome.notifications.create(notificationId, {
-      type: "basic",
-      iconUrl: "icons/icon128.png",
-      title: "desknets_noticer テスト通知",
-      message: "Windowsへの通知表示は正常です。",
-      silent: false
-    });
-    return { ok: true, message: "テスト通知を表示しました。通知が表示されない場合はOS側の通知設定をご確認ください。" };
+    const result = await sendTestNotification();
+    if (result.ok) {
+      return {
+        ok: true,
+        message:
+          "通知の作成要求に成功しました。\n表示されない場合は、WindowsまたはChromeの通知設定を確認してください。"
+      };
+    }
+    return {
+      ok: false,
+      errorCode: result.errorCode || ERROR_CODES.TEST_NOTIFICATION_FAILED,
+      message: "テスト通知を作成できませんでした。"
+    };
   } catch (error) {
-    console.error("[desknets_noticer] テスト通知の表示に失敗しました。", error);
-    return { ok: false, message: "テスト通知の表示に失敗しました。" };
+    console.error("[desknets_noticer] テスト通知メッセージの処理に失敗しました。", error);
+    return { ok: false, errorCode: ERROR_CODES.TEST_NOTIFICATION_FAILED, message: "テスト通知を作成できませんでした。" };
   }
 }
 
@@ -364,6 +407,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.notifications.onClicked.addListener(async (notificationId) => {
+  // テスト通知のクリックはdesknet's NEOを開く必要が無いため、通知を閉じるだけにする。
+  if (notificationId.startsWith(TEST_NOTIFICATION_ID_PREFIX)) {
+    await chrome.notifications.clear(notificationId);
+    return;
+  }
+
   const settings = await getSettings();
   const normalizedUrl = validateAndNormalizeUrl(settings.monitorUrl);
   if (!normalizedUrl) return;
@@ -398,8 +447,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     respondSafely(handleTestConnectionMessage(message.url), sendResponse);
     return true;
   }
-  if (message?.type === "test-notification") {
-    respondSafely(handleTestNotificationMessage(), sendResponse);
+  if (message?.type === "send-test-notification") {
+    respondSafely(handleSendTestNotificationMessage(), sendResponse);
     return true;
   }
   return undefined;

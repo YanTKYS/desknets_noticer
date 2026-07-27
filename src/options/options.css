@@ -100,26 +100,40 @@ input:focus-visible {
   min-height: 1.2em;
 }
 
-.topic-config {
+.topic-card {
   border: 1px solid #d0d7de;
   border-radius: 6px;
   padding: 10px 12px;
   margin: 10px 0;
 }
 
-.topic-config h3 {
-  margin: 0 0 6px 0;
+.topic-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.topic-card-header h3 {
+  margin: 0;
   font-size: 13px;
+}
+
+.topic-delete-button {
+  margin-right: 0;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .topic-enabled-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 4px 0;
+  margin: 8px 0 4px;
 }
 
-.topic-config input[type="text"] {
+.topic-card input[type="text"],
+.topic-card input[type="url"] {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
@@ -127,6 +141,16 @@ input:focus-visible {
   border: 1px solid #d0d7de;
   border-radius: 4px;
   margin-top: 4px;
+}
+
+.topic-ids-display {
+  font-size: 11px;
+  color: #57606a;
+  margin: 6px 0 0;
+}
+
+#addTopicButton {
+  margin-top: 8px;
 }
 
 .field-error {

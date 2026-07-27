@@ -10,6 +10,7 @@ import { STORAGE_KEYS, STATUS } from "../shared/constants.js";
  * @property {number} newCountSinceLastPopupOpen ポップアップ未確認の新規件数
  * @property {import("../shared/models.js").CheckDebugInfo|null} debugInfo
  * @property {boolean} isChecking 確認処理が実行中かどうか
+ * @property {string[]} lastDetectedTopicNames 直近の検知結果に含まれるトピック表示名（ポップアップ表示用）
  */
 
 function defaultState() {
@@ -18,7 +19,8 @@ function defaultState() {
     lastCheckedAt: null,
     newCountSinceLastPopupOpen: 0,
     debugInfo: null,
-    isChecking: false
+    isChecking: false,
+    lastDetectedTopicNames: []
   };
 }
 
@@ -47,6 +49,6 @@ export async function updateRuntimeState(partial) {
  * ポップアップを開いたときにバッジと未確認件数をクリアする。
  */
 export async function clearNewCountBadge() {
-  await updateRuntimeState({ newCountSinceLastPopupOpen: 0 });
+  await updateRuntimeState({ newCountSinceLastPopupOpen: 0, lastDetectedTopicNames: [] });
   await chrome.action.setBadgeText({ text: "" });
 }

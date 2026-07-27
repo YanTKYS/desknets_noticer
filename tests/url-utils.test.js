@@ -6,6 +6,8 @@ import {
   isSameOrigin,
   toOriginPermissionPattern,
   extractHashParam,
+  getHashParams,
+  parseTopicUrl,
   pickBestMatchingTab
 } from "../src/desknets/url-utils.js";
 
@@ -129,4 +131,82 @@ test("異なるオリジンのタブは選ばれない（該当なしの場合�
   const targetUrl = "http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist";
   const tabs = [{ id: 1, url: "http://evil.example.com/scripts/dneo/zforum.exe" }];
   assert.equal(pickBestMatchingTab(tabs, targetUrl), null);
+});
+
+// --- parseTopicUrl / getHashParams（v0.2.0 通知対象トピックURL解析） -------------
+
+test("getHashParamsはハッシュ文字列をURLSearchParamsとして解析する", () => {
+  const url = new URL("http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319");
+  const params = getHashParams(url);
+  assert.equal(params.get("cmd"), "forumalist");
+  assert.equal(params.get("fid"), "8");
+  assert.equal(params.get("tid"), "2319");
+});
+
+test("httpのトピックURLを解析できる", () => {
+  const result = parseTopicUrl("http://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319&init=3");
+  assert.equal(result.ok, true);
+  assert.equal(result.forumId, "8");
+  assert.equal(result.topicId, "2319");
+});
+
+test("httpsのトピックURLを解析できる", () => {
+  const result = parseTopicUrl("https://groupware.example.local/scripts/dneo/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319");
+  assert.equal(result.ok, true);
+  assert.equal(result.forumId, "8");
+  assert.equal(result.topicId, "2319");
+});
+
+test("前後空白を除去してから解析する", () => {
+  const result = parseTopicUrl("  http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319  ");
+  assert.equal(result.ok, true);
+  assert.equal(result.url.startsWith(" "), false);
+});
+
+test("cmd=forumalist以外は拒否する", () => {
+  const result = parseTopicUrl("http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumlist&fid=8&tid=2319");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "missing-cmd");
+});
+
+test("fidなしは拒否する", () => {
+  const result = parseTopicUrl("http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumalist&tid=2319");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "missing-fid");
+});
+
+test("tidなしは拒否する", () => {
+  const result = parseTopicUrl("http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "missing-tid");
+});
+
+test("javascript:スキームは拒否する", () => {
+  const result = parseTopicUrl("javascript:alert(1)");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid-url");
+});
+
+test("data:スキームは拒否する", () => {
+  const result = parseTopicUrl("data:text/html,<script>alert(1)</script>");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid-url");
+});
+
+test("file:スキームは拒否する", () => {
+  const result = parseTopicUrl("file:///etc/passwd");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid-url");
+});
+
+test("空文字は拒否する（reason: empty）", () => {
+  const result = parseTopicUrl("   ");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "empty");
+});
+
+test("異なるオリジンかどうかはparseTopicUrl自体では判定しない（呼び出し側の責務）", () => {
+  const result = parseTopicUrl("http://evil.example.com/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319");
+  assert.equal(result.ok, true);
+  assert.ok(!isSameOrigin(result.url, "http://groupware.example.local/zforum.exe"));
 });

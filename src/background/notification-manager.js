@@ -1,6 +1,6 @@
 // chrome.notifications によるデスクトップ通知の作成とクリック時の遷移処理。
 
-import { EXTENSION_NAME, INDIVIDUAL_NOTIFICATION_LIMIT } from "../shared/constants.js";
+import { EXTENSION_NAME, INDIVIDUAL_NOTIFICATION_LIMIT, TEST_NOTIFICATION_ID_PREFIX, ERROR_CODES } from "../shared/constants.js";
 import { normalizeWhitespace, truncateText } from "../shared/text-utils.js";
 import { isSameOrigin, pickBestMatchingTab } from "../desknets/url-utils.js";
 
@@ -35,9 +35,7 @@ async function recallNotificationUrl(notificationId) {
  * @returns {{title: string, message: string}}
  */
 function buildSinglePostNotification(post, options) {
-  const title = post.topicName
-    ? `${post.topicName}に新規投稿`
-    : `${EXTENSION_NAME}: 新規投稿があります`;
+  const title = post.topicName ? `${post.topicName}に新規投稿` : "電子会議室に新規投稿";
 
   const parts = [];
   if (options.showAuthorInBody && post.author) {
@@ -93,7 +91,9 @@ export async function notifyNewPosts(postsByTopic, options, fallbackUrl) {
           message,
           silent: false
         });
-        await rememberNotificationUrl(notificationId, post.url || fallbackUrl);
+        // クリック時に開くURLの優先順位: 1.新着画面から取得した投稿側URL
+        // 2.登録されたトピックURL 3.新着情報画面URL
+        await rememberNotificationUrl(notificationId, post.url || post.__topicConfigUrl || fallbackUrl);
       }
     } else {
       const { title, message } = buildGroupedNotification(topicName, posts.length);
@@ -105,8 +105,36 @@ export async function notifyNewPosts(postsByTopic, options, fallbackUrl) {
         message,
         silent: false
       });
-      await rememberNotificationUrl(notificationId, fallbackUrl);
+      await rememberNotificationUrl(notificationId, posts[0]?.__topicConfigUrl || fallbackUrl);
     }
+  }
+}
+
+/**
+ * desknet's NEOへは一切アクセスせず、chrome.notifications.create() だけを実行する
+ * テスト通知。Windows・Chromeの通知機能そのものが利用できるかを切り分けるためのもの。
+ * 通知作成要求が成功したかどうかまでしか判定できず、実際にWindowsのバナーへ
+ * 表示されたかどうかは判定できない。
+ * @returns {Promise<{ok: boolean, errorCode?: string}>}
+ */
+export async function sendTestNotification() {
+  if (typeof chrome === "undefined" || !chrome.notifications || typeof chrome.notifications.create !== "function") {
+    return { ok: false, errorCode: ERROR_CODES.NOTIFICATION_PERMISSION_UNAVAILABLE };
+  }
+
+  const notificationId = `${TEST_NOTIFICATION_ID_PREFIX}${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    await chrome.notifications.create(notificationId, {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "desknets_noticer テスト通知",
+      message: "Chrome拡張から通知を送信しました。この通知が表示されれば、端末の通知機能を利用できます。",
+      silent: false
+    });
+    return { ok: true };
+  } catch (error) {
+    console.error("[desknets_noticer] テスト通知の作成に失敗しました。", error);
+    return { ok: false, errorCode: ERROR_CODES.NOTIFICATION_API_ERROR };
   }
 }
 

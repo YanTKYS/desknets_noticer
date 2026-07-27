@@ -32,7 +32,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({
       ok: true,
       pageState: "ok",
-      posts: result.matchedPosts,
+      // forumId/topicId（無ければトピック名）を優先した実際の照合はservice-worker側で
+      // 行うため、認識できた投稿はすべて返す（matchedPostsに絞り込まない）。
+      posts: result.posts,
       recognizedCount: result.recognizedCount,
       matchedCount: result.matchedCount,
       parserMode: result.parserMode,
