@@ -250,7 +250,7 @@ test("resetAllFirstCheckDoneで全トピックのfirstCheckDoneがfalseになる
   assert.ok(settings.topics.every((topic) => topic.firstCheckDone === false));
 });
 
-// --- 旧設定（v0.1.x固定2件方式）からの移行 -------------------------------------
+// --- 旧設定（固定2件・トピック名のみ）からの移行 -------------------------------
 
 test("旧固定2件設定を検出し、動的トピック設定へ移行する", async () => {
   delete store.settings;

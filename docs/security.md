@@ -16,13 +16,8 @@
   必ず検証してから開きます。
 - 設定画面の「テスト通知を送信」は `chrome.notifications.create()` のみを呼び出し、
   desknet's NEOへは一切アクセスしません（端末の通知機能そのものの切り分け用）。
-  通知の作成要求に成功したかどうかまでしか判定できず、実際にWindowsのバナーへ
-  表示されたかどうかまでは判定できません。
-- すべての通知（新着投稿・テスト通知・ログイン切れ通知）は、`chrome.runtime.getURL()`
-  で解決した拡張機能内の画像URLをアイコンとして使用します。相対パスをそのまま
-  渡すとサービスワーカーのコンテキストで画像取得に失敗することがあるため、
-  `src/background/notification-manager.js` の共通関数
-  （`getNotificationIconUrl()` / `createNotificationSafely()`）に集約しています。
+- 通知の失敗をConsoleへ記録する際は、アイコンURLとエラー内容だけを出力します
+  （投稿本文・職員名・接続先URLはログに出しません）。
 
 ## 権限とその理由
 

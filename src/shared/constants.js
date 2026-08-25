@@ -1,5 +1,3 @@
-// 拡張機能全体で共有する定数定義。
-
 export const EXTENSION_NAME = "desknet's noticer";
 
 export const MAX_TOPIC_NAME_LENGTH = 100;

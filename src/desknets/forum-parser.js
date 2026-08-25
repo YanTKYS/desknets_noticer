@@ -1,21 +1,11 @@
 // desknet's NEO 電子会議室「新着情報」画面のDOM解析処理を集約するアダプター。
+// 画面構造が変わった場合にこのファイルだけの修正で対応できるよう、解析ロジックを
+// ここへ集約している。対象のDOM構造はdocs/desknets-v6-dom-investigation.mdを参照。
 //
-// desknet's NEOの画面構造が変わった場合は、このファイルだけを修正すればよいように
-// 解析ロジックをここに集約している。
-//
-// desknet's NEO v6.0 R1.0の実機確認により、実際のDOM構造（jforum-topiclink等の
-// CSSクラス、data-fid/data-tid属性、ハッシュルーティングのURL）が判明したため、
-// 専用パーサー（PARSER_MODE.DESKNETS_V6）を最優先で実行する。
-// 詳細はdocs/desknets-v6-dom-investigation.mdを参照。
-//
-// v6専用パーサーが1件もトピックリンクを検出できなかった場合にのみ、
-// 以下の汎用パーサー（実画面未確認の暫定実装）へフォールバックする。
-// セレクターの安定性についての方針（優先順位）:
-//   1. 投稿ID・トピックID・会議室IDなどの内部識別子（data-*属性等）
-//   2. リンクURLとそのクエリパラメーター
-//   3. data-*属性、id属性、意味のある要素構造
-//   4. ラベル文字列と相対的なDOM構造
-//   5. CSSクラス名（最も不安定なため最終手段）
+// 実機確認済みのv6専用パーサー（PARSER_MODE.DESKNETS_V6）を最優先で実行し、
+// トピックリンクを1件も検出できなかった場合にのみ汎用パーサーへフォールバックする。
+// セレクターは、変更に強い順（内部識別子 → リンクのクエリ → data-*属性・id属性 →
+// ラベル文字列と相対DOM構造 → CSSクラス名）に選ぶ方針とする。
 
 import { createForumPost } from "../shared/models.js";
 import { normalizeWhitespace, truncateText } from "../shared/text-utils.js";
@@ -47,9 +37,8 @@ function extractTextPreservingLineBreaks(el) {
 }
 
 /**
- * a.jforum-topiclink[data-fid][data-tid] を手がかりに投稿候補の行（tr）を集める。
- * 同じtrが複数のリンクから重複して選ばれないよう重複排除する。
- * :has()セレクターには依存しない。
+ * トピックリンクを手がかりに投稿候補の行（tr）を集める。1つの行に複数のトピックリンクが
+ * 含まれる場合でも同じ行を二重に数えないよう、重複を除外する。
  * @param {Document} doc
  * @returns {{ topicLinkCount: number, rows: Element[] }}
  */
@@ -155,7 +144,7 @@ function checkTopicNameFoundInHtml(doc, enabledTopicNames) {
   return enabledTopicNames.some((name) => typeof name === "string" && name !== "" && bodyText.includes(name));
 }
 
-// --- 汎用パーサー（実画面未確認の暫定実装、v6専用パーサーのフォールバック用） -----
+// --- 汎用パーサー（実画面未確認。v6専用パーサーのフォールバック用） ----------------
 
 const ROW_SELECTOR_STRATEGIES = [
   {
