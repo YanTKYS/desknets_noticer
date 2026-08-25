@@ -1,13 +1,8 @@
-// 新着情報画面から取得した投稿と、設定済みの通知対象トピック（TopicConfig）を
-// 照合するロジックを集約する。
+// 新着情報画面から取得した投稿と、設定済みの通知対象トピック（TopicConfig）を照合する。
 //
-// 優先順位:
-//   1. forumId（会議室ID）とtopicId（トピックID）の両方が一致
-//   2. forumId・topicIdを持たない設定（旧設定など）に限り、トピック名の完全一致
-//   3. 上記に一致しない投稿は対象外（通知しない）
-//
-// これにより、トピック名が変更されても会議室ID・トピックIDが同じであれば
-// 同一トピックとして継続して検知できる。
+// 会議室ID・トピックIDの一致を最優先するのは、電子会議室側でトピック名が変更されても
+// 同一トピックとして検知を継続するため。トピック名の完全一致は、IDを持たない設定
+// （旧バージョンからの移行直後など）に限ったフォールバックとして使う。
 
 /**
  * 1件の投稿に一致するトピック設定を探す。
@@ -23,8 +18,6 @@ export function findMatchingTopicConfig(post, topicConfigs) {
     if (byId) return byId;
   }
 
-  // フォールバック: forumId/topicIdを持たない設定（未移行の旧設定等）に限り、
-  // トピック名の完全一致で照合する。
   return (
     topicConfigs.find(
       (config) => (!config.forumId || !config.topicId) && config.name && post.topicName === config.name

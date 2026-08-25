@@ -133,7 +133,7 @@ test("異なるオリジンのタブは選ばれない（該当なしの場合�
   assert.equal(pickBestMatchingTab(tabs, targetUrl), null);
 });
 
-// --- parseTopicUrl / getHashParams（v0.2.0 通知対象トピックURL解析） -------------
+// --- parseTopicUrl / getHashParams（通知対象トピックURLの解析） -----------------
 
 test("getHashParamsはハッシュ文字列をURLSearchParamsとして解析する", () => {
   const url = new URL("http://groupware.example.local/zforum.exe?cmd=forumlist#cmd=forumalist&fid=8&tid=2319");

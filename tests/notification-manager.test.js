@@ -138,7 +138,7 @@ test("notifyNewPostsは投稿本文や職員名をそのまま長期保存しな
   }
 });
 
-// --- sendTestNotification（v0.2.0 テスト通知） ----------------------------------
+// --- sendTestNotification（テスト通知） -----------------------------------------
 
 test("sendTestNotificationはchrome.notifications.create()を呼び出す", async () => {
   installFakeChrome([]);
@@ -187,7 +187,7 @@ test("chrome.notifications.create()が失敗した場合はエラー結果を返
   assert.ok(result.errorCode);
 });
 
-// --- 通知アイコンURL（v0.2.1） ---------------------------------------------------
+// --- 通知アイコンURL -------------------------------------------------------------
 
 test("テスト通知はchrome.runtime.getURL()で解決した絶対URLをiconUrlへ渡す（相対パスを直接渡さない）", async () => {
   installFakeChrome([]);

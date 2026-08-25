@@ -1,14 +1,9 @@
 // バックグラウンドサービスワーカー。定期確認・通知・状態管理を統括する。
 //
-// 実行順序:
-//   1. chrome.alarms / 起動時 / 「今すぐ確認」から runCheck() が呼ばれる
-//   2. desknet's NEOの新着情報画面をfetchで取得（読み取り専用、credentials: include）
-//   3. サービスワーカーにはDOM APIが無いため、オフスクリーンドキュメントへHTMLを渡してDOM解析する
-//   4. 解析結果ともとに、forumId・topicId（無ければトピック名）を優先して
-//      設定済みトピックと照合し、新規投稿を判定・通知する
-//
-// 新着情報画面は1回だけ取得し、登録済みの全トピックと照合する
-// （トピックURLごとに個別fetchは行わない。登録件数が増えても通信回数は変わらない）。
+// 新着情報画面の取得は1回のみで、その結果を登録済みの全トピックと照合する
+// （トピックURLごとの個別fetchは行わないため、登録件数が増えても通信回数は変わらない）。
+// HTMLの解析をオフスクリーンドキュメントへ委譲しているのは、サービスワーカーに
+// DOM APIが無いため。
 
 import { ALARM_NAME, ERROR_CODES, STATUS, TEST_NOTIFICATION_ID_PREFIX } from "../shared/constants.js";
 import { getSettings, getEnabledTopicConfigs, saveSettings } from "../storage/settings-store.js";

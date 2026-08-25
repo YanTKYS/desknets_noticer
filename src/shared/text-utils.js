@@ -1,5 +1,3 @@
-// テキスト整形・ハッシュ生成のユーティリティ。
-
 /**
  * 改行や連続空白を1つの半角スペースに正規化する。
  * @param {string} text
@@ -11,7 +9,7 @@ export function normalizeWhitespace(text) {
 }
 
 /**
- * 指定文字数程度に省略する（80〜120文字を目安に、maxを超えたら"…"を付ける）。
+ * maxLengthを超える場合に末尾を"…"へ置き換えて省略する。
  * @param {string} text
  * @param {number} maxLength
  * @returns {string}

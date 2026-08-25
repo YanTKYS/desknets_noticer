@@ -1,10 +1,9 @@
 // desknet's NEOのページ状態（正常 / 未ログイン / 想定外画面）を判定する。
 //
-// 実機確認により、電子会議室の新着情報画面ではjforum-topiclink / jforum-forumlink
-// といったCSSクラスが使われていることが判明した（docs/desknets-v6-dom-investigation.md
-// 参照）。一方、ログイン切れ画面・エラー画面そのものは未確認のため、ここでの判定は
-// 引き続きヒューリスティック（推測に基づく複数条件のOR判定）である。
-// 実画面のHTMLが提供され次第、選定基準を見直すこと。
+// 正常な新着情報画面のマーカー（jforum-topiclink等）は実機確認済みだが、ログイン切れ
+// 画面・エラー画面そのものは未確認のため、その判定は一般的なグループウェアの傾向に
+// もとづくヒューリスティック（複数条件のOR判定）である。実画面のHTMLを入手できた
+// 場合は判定条件を見直すこと（docs/desknets-v6-dom-investigation.md 参照）。
 
 const LOGIN_KEYWORDS = ["ログイン", "login", "sign in", "パスワードを入力"];
 const SESSION_EXPIRED_KEYWORDS = [
